@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DVA · Student Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+      colors: {
+        ink: { 50:'#FAFAFA', 100:'#F4F4F5', 200:'#E4E4E7', 300:'#D4D4D8', 400:'#A1A1AA', 500:'#71717A', 600:'#52525B', 700:'#3F3F46', 800:'#27272A', 900:'#18181B', 950:'#09090B' },
+        accent: { 50:'#EEF2FF', 100:'#E0E7FF', 500:'#6366F1', 600:'#4F46E5', 700:'#4338CA', 800:'#3730A3' },
+      },
+      boxShadow: {
+        soft: '0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06)',
+        pop: '0 8px 24px rgba(16,24,40,.08), 0 2px 6px rgba(16,24,40,.04)',
+        ring: '0 0 0 4px rgba(99,102,241,.12)',
+      },
+    },
+  },
+};
+</script>
+<style>
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    background: #FAFAFA;
+    color: #18181B;
+    font-feature-settings: 'cv11','ss01','ss03';
+  }
+  ::selection { background:#E0E7FF; color:#3730A3; }
+  /* slim scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #E4E4E7; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: #D4D4D8; background-clip: padding-box; border: 2px solid transparent; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* slide-over */
+  .slideover-panel { transform: translateX(100%); transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+  .slideover.open .slideover-panel { transform: translateX(0); }
+  .slideover-backdrop { opacity: 0; transition: opacity .25s ease; }
+  .slideover.open .slideover-backdrop { opacity: 1; }
+  .slideover { pointer-events: none; }
+  .slideover.open { pointer-events: auto; }
+
+  /* modal */
+  .modal-card { transform: translateY(8px) scale(.985); opacity: 0; transition: all .22s cubic-bezier(.2,.8,.2,1); }
+  .modal.open .modal-card { transform: translateY(0) scale(1); opacity: 1; }
+  .modal-backdrop { opacity: 0; transition: opacity .2s ease; }
+  .modal.open .modal-backdrop { opacity: 1; }
+  .modal { pointer-events: none; }
+  .modal.open { pointer-events: auto; }
+
+  /* toasts */
+  .toast { transform: translateY(8px); opacity: 0; transition: all .25s cubic-bezier(.2,.8,.2,1); }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  /* presence pulse */
+  @keyframes presencePulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,.55); } 50% { box-shadow: 0 0 0 6px rgba(16,185,129,0); } }
+  .presence-dot { animation: presencePulse 2s ease-out infinite; }
+
+  /* recording pulse */
+  @keyframes recPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: .55; } }
+  .rec-pulse { animation: recPulse 1.1s ease-in-out infinite; }
+
+  /* tab underline */
+  .tab-underline { position: relative; }
+  .tab-underline[data-active="true"]::after {
+    content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:#18181B; border-radius:2px;
+  }
+
+  /* row clickable */
+  .row-clickable { transition: background-color .12s ease; cursor: pointer; }
+  .row-clickable:hover { background:#FAFAFA; }
+
+  /* briefing card */
+  .briefing-card {
+    background:
+      radial-gradient(80% 120% at 0% 0%, rgba(99,102,241,.06) 0%, rgba(99,102,241,0) 60%),
+      linear-gradient(180deg, #FFFFFF 0%, #FCFCFD 100%);
+    border: 1px solid #ECECEE;
+    box-shadow: 0 1px 2px rgba(16,24,40,.03);
+  }
+  .briefing-divider { background: linear-gradient(90deg, rgba(228,228,231,0) 0%, rgba(228,228,231,1) 12%, rgba(228,228,231,1) 88%, rgba(228,228,231,0) 100%); }
+
+  /* skeleton shimmer */
+  @keyframes shimmer { 0%{ background-position: -400px 0; } 100%{ background-position: 400px 0; } }
+  .skeleton { background: linear-gradient(90deg,#F4F4F5 0%,#FAFAFA 50%,#F4F4F5 100%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; border-radius: 6px; }
+
+  /* avatar colors deterministic by initial */
+  .av-AK { background:#FEF2F2; color:#9F1239; }
+  .av-DV { background:#EFF6FF; color:#1E3A8A; }
+  .av-FM { background:#F0FDF4; color:#14532D; }
+  .av-S  { background:#F5F3FF; color:#4338CA; }
+
+  /* keyboard kbd */
+  kbd { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 6px; border:1px solid #E4E4E7; border-bottom-width:2px; border-radius: 5px; background:#FFF; color:#52525B; }
+
+  /* status dots */
+  .dot { width:6px; height:6px; border-radius:999px; display:inline-block; }
+
+  /* hide scrollbar in horizontal tabs */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* button shimmer on primary */
+  .btn-primary {
+    background: linear-gradient(180deg, #5048E5 0%, #4338CA 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 1px 2px rgba(67,56,202,.4);
+  }
+  .btn-primary:hover { background: linear-gradient(180deg, #4F46E5 0%, #3F36C8 100%); }
+  .btn-primary:active { transform: translateY(1px); }
+</style>
+</head>
+<body class="overflow-hidden">
+
+<!-- ============== APP SHELL ============== -->
+<div class="h-screen w-screen flex">
+
+  <!-- Sidebar -->
+  <aside class="w-[244px] shrink-0 bg-white border-r border-ink-200/70 flex flex-col">
+    <div class="h-16 px-5 flex items-center gap-3 border-b border-ink-200/70">
+      <div class="w-8 h-8 rounded-lg bg-ink-900 text-white grid place-items-center font-semibold tracking-tight">D</div>
+      <div class="leading-tight">
+        <div class="font-semibold text-[14px]">DVA Operations</div>
+        <div class="text-[11px] text-ink-500 -mt-0.5">Diamond program</div>
+      </div>
+    </div>
+
+    <nav class="px-3 py-3 flex-1 space-y-0.5 text-[13.5px]">
+      <button data-view="students" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-ink-900 bg-ink-100">
+        <i data-lucide="users-round" class="w-4 h-4"></i> Students
+        <span class="ml-auto text-[11px] text-ink-500 font-normal">947</span>
+      </button>
+      <button data-view="emi" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-ink-700 hover:bg-ink-100/70">
+        <i data-lucide="indian-rupee" class="w-4 h-4"></i> EMI Tracker
+        <span class="ml-auto text-[11px] bg-rose-50 text-rose-700 rounded px-1.5 py-0.5 font-medium">5</span>
+      </button>
+      <button data-view="reminders" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-ink-700 hover:bg-ink-100/70">
+        <i data-lucide="bell-ring" class="w-4 h-4"></i> Reminders
+      </button>
+      <button data-view="calls" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-ink-700 hover:bg-ink-100/70">
+        <i data-lucide="phone" class="w-4 h-4"></i> Call Queue
+        <span class="ml-auto text-[11px] text-ink-500 font-normal">8</span>
+      </button>
+      <button data-view="reports" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-ink-700 hover:bg-ink-100/70">
+        <i data-lucide="line-chart" class="w-4 h-4"></i> Reports
+      </button>
+
+      <div class="pt-4 pb-1.5 px-3 text-[10.5px] uppercase tracking-wider text-ink-400 font-semibold">Workspace</div>
+      <button data-view="settings" class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-ink-700 hover:bg-ink-100/70">
+        <i data-lucide="settings-2" class="w-4 h-4"></i> Settings
+      </button>
+      <button class="nav-item w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-ink-700 hover:bg-ink-100/70">
+        <i data-lucide="link-2" class="w-4 h-4"></i> GHL Integration
+        <span class="ml-auto inline-flex items-center gap-1 text-[10.5px] text-emerald-700"><span class="dot bg-emerald-500"></span>live</span>
+      </button>
+    </nav>
+
+    <!-- user box -->
+    <div class="m-3 p-3 rounded-xl bg-ink-50 border border-ink-200/70 flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-full av-AK grid place-items-center text-[12px] font-semibold">AK</div>
+      <div class="leading-tight flex-1">
+        <div class="text-[13px] font-semibold">Anjali Kumar</div>
+        <div class="text-[11px] text-ink-500">Coach · Online</div>
+      </div>
+      <button class="text-ink-400 hover:text-ink-700"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 flex flex-col min-w-0">
+
+    <!-- Top bar -->
+    <header class="h-16 px-7 border-b border-ink-200/70 bg-white/80 backdrop-blur flex items-center gap-4">
+      <button onclick="openCmdk()" class="flex-1 max-w-[520px] h-9 rounded-lg border border-ink-200 bg-ink-50/60 hover:bg-white hover:border-ink-300 transition flex items-center gap-2 px-3 text-[13px] text-ink-500">
+        <i data-lucide="search" class="w-4 h-4"></i>
+        <span>Search students, EMI, calls…</span>
+        <span class="ml-auto flex items-center gap-1"><kbd>⌘</kbd><kbd>K</kbd></span>
+      </button>
+      <div class="flex items-center gap-1.5">
+        <button class="w-9 h-9 rounded-lg hover:bg-ink-100 grid place-items-center relative">
+          <i data-lucide="bell" class="w-[18px] h-[18px] text-ink-700"></i>
+          <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
+        </button>
+        <button class="w-9 h-9 rounded-lg hover:bg-ink-100 grid place-items-center">
+          <i data-lucide="moon" class="w-[18px] h-[18px] text-ink-700"></i>
+        </button>
+        <div class="w-px h-5 bg-ink-200 mx-1.5"></div>
+        <div class="flex items-center gap-2 pr-1">
+          <div class="text-right leading-tight">
+            <div class="text-[12.5px] font-semibold">Anjali Kumar</div>
+            <div class="text-[10.5px] text-ink-500">Coach</div>
+          </div>
+          <div class="w-8 h-8 rounded-full av-AK grid place-items-center text-[12px] font-semibold">AK</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- View container -->
+    <section id="view-container" class="flex-1 overflow-auto"></section>
+  </main>
+</div>
+
+<!-- ============== SLIDE-OVER ============== -->
+<div id="slideover" class="slideover fixed inset-0 z-40">
+  <div class="slideover-backdrop absolute inset-0 bg-ink-950/30" onclick="closeStudent()"></div>
+  <aside class="slideover-panel absolute right-0 top-0 bottom-0 w-[760px] max-w-[96vw] bg-white shadow-pop flex flex-col">
+    <div id="slideover-content" class="flex-1 flex flex-col min-h-0"></div>
+  </aside>
+</div>
+
+<!-- ============== REMINDER MODAL ============== -->
+<div id="modal" class="modal fixed inset-0 z-50 grid place-items-center px-4">
+  <div class="modal-backdrop absolute inset-0 bg-ink-950/40" onclick="closeModal()"></div>
+  <div class="modal-card relative bg-white rounded-2xl shadow-pop w-full max-w-[520px] overflow-hidden">
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- ============== CMDK ============== -->
+<div id="cmdk" class="modal fixed inset-0 z-50 grid place-items-start pt-[14vh] px-4">
+  <div class="modal-backdrop absolute inset-0 bg-ink-950/40" onclick="closeCmdk()"></div>
+  <div class="modal-card relative bg-white rounded-2xl shadow-pop w-full max-w-[600px] overflow-hidden">
+    <div class="flex items-center gap-2 px-4 h-12 border-b border-ink-100">
+      <i data-lucide="search" class="w-4 h-4 text-ink-500"></i>
+      <input id="cmdk-input" placeholder="Type a student name, email, or command…" class="flex-1 outline-none text-[14px] placeholder:text-ink-400">
+      <kbd>esc</kbd>
+    </div>
+    <div id="cmdk-list" class="max-h-[60vh] overflow-auto py-2"></div>
+  </div>
+</div>
+
+<!-- ============== TOASTS ============== -->
+<div id="toasts" class="fixed bottom-6 right-6 z-[60] flex flex-col gap-2 items-end"></div>
+
+<script>
+/* ================ DATA ================ */
+const COACHES = {
+  AK: { name: 'Anjali Kumar', initials: 'AK', cls: 'av-AK' },
+  DV: { name: 'Dipti Vartak', initials: 'DV', cls: 'av-DV' },
+  FM: { name: 'Fatima Mehra', initials: 'FM', cls: 'av-FM' },
+};
+
+const STUDENTS = [
+  { id: 's1', first:'Priya', last:'Sharma', email:'priya.sharma@example.com', mobile:'+91 90032 12289', membership:'Diamond', tags:['SH'], start:'31 Jul 2025', end:'31 Jul 2026', status:'active', lastCallAgo:'2 d', lastCallBy:'AK', progress:[1,1,0,0,0,0], background:'Small-town baker building order volume. Decorated cakes, mostly weddings.', upgrade:true, presence:'DV', emi:{installment:'5/9', amount:26173, due:'13 May', state:'due_soon'} },
+  { id: 's2', first:'Rohan', last:'Iyer', email:'rohan.iyer@example.com', mobile:'+91 70917 40716', membership:'Diamond', tags:['BBR2'], start:'14 Jun 2025', end:'14 Jun 2026', status:'active', lastCallAgo:'today', lastCallBy:'AK', progress:[1,1,1,0,0,0], background:'Pastry chef transitioning from job to home brand.', upgrade:false, emi:{installment:'6/9', amount:23333, due:'14 May', state:'due_soon'} },
+  { id: 's3', first:'Meera', last:'Kapoor', email:'meera.kapoor@example.com', mobile:'+91 78552 97964', membership:'Ex-Diamond', tags:['SBF'], start:'30 Apr 2024', end:'30 Apr 2026', status:'expiring', lastCallAgo:'5 d', lastCallBy:'FM', progress:[1,1,1,1,0,0], background:'Six-month extension granted in Jan after personal challenges.', upgrade:true, emi:{installment:'3/9', amount:22777, due:'10 May', state:'due_soon'} },
+  { id: 's4', first:'Anjali', last:'Roy', email:'anjali.roy@example.com', mobile:'+91 88123 55104', membership:'Diamond', tags:[], start:'02 Sep 2025', end:'02 Sep 2026', status:'active', lastCallAgo:'never', lastCallBy:null, progress:[1,0,0,0,0,0], background:'Recent enrolment, hasn\'t responded to onboarding outreach yet.', upgrade:false, emi:{installment:'7/9', amount:26173, due:'08 May', state:'overdue'} },
+  { id: 's5', first:'Kiran', last:'Reddy', email:'kiran.reddy@example.com', mobile:'+91 99812 00342', membership:'Diamond', tags:['bfs'], start:'11 Mar 2026', end:'11 Mar 2027', status:'active', lastCallAgo:'1 d', lastCallBy:'DV', progress:[1,0,0,0,0,0], background:'Premium customer, expanding to commercial kitchen.', upgrade:false, emi:{installment:'2/9', amount:24500, due:'18 May', state:'upcoming'} },
+  { id: 's6', first:'Tanvi', last:'Mehta', email:'tanvi.mehta@example.com', mobile:'+91 78001 11823', membership:'Diamond', tags:['SH','SBF'], start:'01 Aug 2025', end:'01 Aug 2026', status:'active', lastCallAgo:'3 d', lastCallBy:'AK', progress:[1,1,1,1,1,0], background:'Top of cohort. Mentoring others.', upgrade:false, emi:{installment:'8/9', amount:25000, due:'21 May', state:'upcoming'} },
+  { id: 's7', first:'Nikhil', last:'Patel', email:'nikhil.patel@example.com', mobile:'+91 90909 12345', membership:'Diamond', tags:['BBR2'], start:'20 Sep 2025', end:'20 Sep 2026', status:'active', lastCallAgo:'8 d', lastCallBy:'FM', progress:[1,1,0,0,0,0], background:'Engineer side-hustling into baking. Methodical, asks great questions.', upgrade:true, emi:{installment:'4/9', amount:24166, due:'25 May', state:'upcoming'} },
+  { id: 's8', first:'Ritika', last:'Bose', email:'ritika.bose@example.com', mobile:'+91 89019 88231', membership:'Ex-Diamond', tags:[], start:'15 Mar 2024', end:'15 Mar 2026', status:'expired', lastCallAgo:'14 d', lastCallBy:'AK', progress:[1,1,1,1,1,1], background:'Graduated. Considering renewal for advanced track.', upgrade:true, emi:null },
+];
+
+const CALLS = {
+  s1: [
+    { id:'c1', date:'Today · 10:42', coach:'AK', outcome:'connected', next:'Send Module 3 link · tomorrow',
+      comment:'She\'s not taking many orders. Asked her to push WhatsApp marketing — agreed to try a 7-day plan. Will check Module 3 first.' },
+    { id:'c2', date:'27 Nov 2025 · 16:10', coach:'DV', outcome:'no_answer', next:null,
+      comment:'Called twice, message sent. No reply. Trying again next week.' },
+    { id:'c3', date:'12 Nov 2025 · 11:30', coach:'FM', outcome:'connected', next:'Background check follow-up',
+      comment:'Background alignment done. Six-month extension was given. She\'s overwhelmed but motivated.' },
+    { id:'c4', date:'02 Sep 2025 · 18:00', coach:'DV', outcome:'connected', next:null,
+      comment:'Onboarding call. Recipe diversification discussed. She wants to focus on cakes first, breads later.' },
+  ],
+  s2: [
+    { id:'c1', date:'Today · 09:15', coach:'AK', outcome:'connected', next:'Send packaging supplier list',
+      comment:'Asked for help with packaging vendors. Sent her a shortlist after the call.' },
+    { id:'c2', date:'04 Apr 2026 · 14:00', coach:'DV', outcome:'connected', next:null,
+      comment:'Strong progress on Month 3. Pricing strategy reviewed.' },
+  ],
+};
+
+const BRIEFINGS = {
+  s1: {
+    story: 'Priya runs a small-town home-baking business focused on decorated wedding cakes. After 4+ months of inconsistent order volume, she is finally warming up to digital marketing tactics introduced by AK in late January. Background extension was granted by FM in November after a personal stretch.',
+    threads: [
+      { coach:'DV', dates:'Sep–Nov 2025', topic:'Recipe diversification — wanted to expand beyond wedding cakes; she pushed back, prefers to specialize first.' },
+      { coach:'FM', dates:'Nov 2025', topic:'Personal background and 6-month extension. One-on-one rapport established.' },
+      { coach:'AK', dates:'Jan 2026 – today', topic:'WhatsApp & local marketing tactics. She agreed to try a structured 7-day plan today.' },
+    ],
+    actions: [
+      { who:'AK', what:'Send Module 3 (WhatsApp Funnel) link', due:'tomorrow' },
+      { who:'Admin', what:'Review extension renewal eligibility', due:'28 May' },
+    ],
+    flags: [
+      'Slow EMI history — installment #4 needed 2 reminders before payment.',
+      'Month 3 checkpoint still unticked despite content released 6 weeks ago.',
+    ],
+  },
+  s2: {
+    story: 'Rohan transitioned from a corporate pastry-chef job to a home brand 9 months ago. Methodical, executes well, asks great questions. On track with progress and EMIs.',
+    threads: [
+      { coach:'DV', dates:'Apr 2026', topic:'Pricing strategy and unit economics review.' },
+      { coach:'AK', dates:'May 2026', topic:'Packaging vendors and supply chain.' },
+    ],
+    actions: [{ who:'AK', what:'Send packaging supplier shortlist', due:'today' }],
+    flags: [],
+  },
+};
+
+const EMIS = STUDENTS.filter(s => s.emi).map(s => ({
+  ...s.emi, studentId: s.id, name: s.first + ' ' + s.last,
+}));
+
+const REMINDER_EVENTS = [
+  { id:'emi.reminder_due', name:'EMI reminder (2 days before due)', recipient:'Student', schedule:'Daily 09:00', enabled:true },
+  { id:'emi.overdue', name:'EMI overdue follow-up', recipient:'Student', schedule:'Daily 10:00', enabled:true },
+  { id:'emi.batch_overdue', name:'Admin overdue digest', recipient:'Admin', schedule:'Daily 09:30', enabled:true },
+  { id:'course.month_pending', name:'Monthly progress nudge', recipient:'Student', schedule:'Last day of month', enabled:true },
+  { id:'course.expiring_soon', name:'Course expiring (14 d)', recipient:'Student', schedule:'Daily 09:00', enabled:true },
+  { id:'student.no_call_30d', name:'Coach: silent students', recipient:'Coach', schedule:'Daily 09:00', enabled:true },
+  { id:'call.followup_due', name:'Coach: follow-up due today', recipient:'Coach', schedule:'Daily 09:00', enabled:true },
+  { id:'student.assigned', name:'Coach: new student assigned', recipient:'Coach', schedule:'On event', enabled:true },
+  { id:'reminder.failed', name:'Admin: reminder failure', recipient:'Admin', schedule:'On event', enabled:false },
+];
+
+/* ================ HELPERS ================ */
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+const fmtINR = n => '₹' + n.toLocaleString('en-IN');
+const initials = (f,l) => (f[0]||'')+(l[0]||'');
+
+function statusPill(status) {
+  const map = {
+    active:    ['Active', 'bg-emerald-50 text-emerald-700 ring-emerald-100'],
+    expiring:  ['Expiring soon','bg-amber-50 text-amber-800 ring-amber-100'],
+    expired:   ['Expired',  'bg-ink-100 text-ink-600 ring-ink-200'],
+    due_soon:  ['Due soon', 'bg-amber-50 text-amber-800 ring-amber-100'],
+    overdue:   ['Overdue',  'bg-rose-50 text-rose-700 ring-rose-100'],
+    upcoming:  ['Upcoming', 'bg-ink-100 text-ink-600 ring-ink-200'],
+    paid:      ['Paid',     'bg-accent-50 text-accent-700 ring-accent-100'],
+  };
+  const [label, cls] = map[status] || ['—','bg-ink-100 text-ink-600 ring-ink-200'];
+  return `<span class="inline-flex items-center gap-1.5 text-[11.5px] font-medium px-2 py-0.5 rounded-full ring-1 ring-inset ${cls}"><span class="dot ${cls.includes('emerald')?'bg-emerald-500':cls.includes('amber')?'bg-amber-500':cls.includes('rose')?'bg-rose-500':cls.includes('accent')?'bg-accent-500':'bg-ink-400'}"></span>${label}</span>`;
+}
+
+function avatar(coachKey, size=28) {
+  if (!coachKey) return `<div class="w-7 h-7 rounded-full bg-ink-100 grid place-items-center text-[10px] font-semibold text-ink-400">—</div>`;
+  const c = COACHES[coachKey];
+  return `<div class="rounded-full ${c.cls} grid place-items-center font-semibold" style="width:${size}px;height:${size}px;font-size:${size*0.42}px">${c.initials}</div>`;
+}
+
+function studentAvatar(s, size=32) {
+  return `<div class="rounded-full av-S grid place-items-center font-semibold" style="width:${size}px;height:${size}px;font-size:${size*0.4}px">${initials(s.first,s.last).toUpperCase()}</div>`;
+}
+
+/* ================ NAV / VIEW ROUTING ================ */
+const VIEWS = {};
+function showView(name) {
+  $$('.nav-item').forEach(b => {
+    const active = b.dataset.view === name;
+    b.classList.toggle('bg-ink-100', active);
+    b.classList.toggle('text-ink-900', active);
+    b.classList.toggle('font-medium', active);
+    b.classList.toggle('text-ink-700', !active);
+  });
+  $('#view-container').innerHTML = (VIEWS[name] || VIEWS.students)();
+  lucide.createIcons();
+  // bind
+  if (name === 'students') bindStudentsView();
+  if (name === 'emi') bindEmiView();
+  if (name === 'reminders' || name === 'settings') bindRemindersView();
+}
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-view]');
+  if (btn) { e.preventDefault(); showView(btn.dataset.view); }
+});
+
+/* ================ STUDENTS VIEW ================ */
+VIEWS.students = () => {
+  const kpis = [
+    { label:'Total students', value:'947', sub:'+12 this week', tone:'neutral', icon:'users' },
+    { label:'Active',          value:'906', sub:'95.7% retention', tone:'good', icon:'circle-check' },
+    { label:'Expiring · 30 d', value:'24',  sub:'7 unrenewed',      tone:'warn', icon:'clock' },
+    { label:'EMI overdue',     value:'5',   sub:fmtINR(86200) + ' due', tone:'risk', icon:'alert-triangle' },
+  ];
+
+  const kpiHtml = kpis.map(k => `
+    <div class="bg-white border border-ink-200/70 rounded-xl p-4 hover:shadow-soft transition">
+      <div class="flex items-start justify-between">
+        <div class="text-[12px] text-ink-500 font-medium">${k.label}</div>
+        <div class="w-7 h-7 rounded-lg grid place-items-center
+             ${k.tone==='good'?'bg-emerald-50 text-emerald-600':k.tone==='warn'?'bg-amber-50 text-amber-600':k.tone==='risk'?'bg-rose-50 text-rose-600':'bg-ink-100 text-ink-500'}">
+          <i data-lucide="${k.icon}" class="w-4 h-4"></i>
+        </div>
+      </div>
+      <div class="mt-2 text-[26px] font-semibold tracking-tight">${k.value}</div>
+      <div class="text-[12px] text-ink-500">${k.sub}</div>
+    </div>
+  `).join('');
+
+  const rows = STUDENTS.map(s => `
+    <div class="row-clickable grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0" data-student="${s.id}">
+      <div>${studentAvatar(s, 30)}</div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 font-medium text-[13.5px] truncate">${s.first} ${s.last}
+          ${s.presence?`<span title="${s.presence} is viewing" class="presence-dot ml-1 w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>`:''}
+        </div>
+        <div class="text-[11.5px] text-ink-500 truncate">${s.email}</div>
+      </div>
+      <div class="text-[13px]">
+        <div class="text-ink-900 font-medium">${s.membership}</div>
+        <div class="text-[11px] text-ink-500">${s.start} – ${s.end}</div>
+      </div>
+      <div class="flex flex-wrap gap-1">
+        ${s.tags.length ? s.tags.map(t=>`<span class="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700">${t}</span>`).join('') : '<span class="text-[11px] text-ink-400">—</span>'}
+      </div>
+      <div class="text-[12.5px]">
+        <div class="font-medium">${s.end.split(' ').slice(0,2).join(' ')}</div>
+        <div class="text-[10.5px] text-ink-500">${s.status==='expiring'?'expiring':s.status==='expired'?'expired':'in '+Math.abs(daysUntil(s.end))+' d'}</div>
+      </div>
+      <div class="flex items-center gap-2">
+        ${s.lastCallBy ? avatar(s.lastCallBy, 22) : '<div class="w-[22px] h-[22px] rounded-full bg-ink-100"></div>'}
+        <div class="text-[12px]">
+          <div class="font-medium">${s.lastCallAgo === 'today' ? 'Today' : s.lastCallAgo}</div>
+          <div class="text-[10.5px] text-ink-500">${s.lastCallBy ? COACHES[s.lastCallBy].initials : 'no call yet'}</div>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-2">
+        ${statusPill(s.status)}
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="px-7 py-7 max-w-[1400px]">
+      <div class="flex items-end justify-between mb-6">
+        <div>
+          <h1 class="text-[24px] font-semibold tracking-tight leading-tight">Students</h1>
+          <p class="text-[13.5px] text-ink-500 mt-1">Manage 947 active and historical Diamond students.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="h-9 px-3 rounded-lg border border-ink-200 hover:bg-ink-50 text-[13px] font-medium flex items-center gap-1.5"><i data-lucide="upload-cloud" class="w-4 h-4"></i> Import CSV</button>
+          <button class="h-9 px-3 rounded-lg border border-ink-200 hover:bg-ink-50 text-[13px] font-medium flex items-center gap-1.5"><i data-lucide="download-cloud" class="w-4 h-4"></i> Pull from GHL</button>
+          <button class="btn-primary h-9 px-3.5 rounded-lg text-white text-[13px] font-medium flex items-center gap-1.5"><i data-lucide="plus" class="w-4 h-4"></i> Add student</button>
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div class="grid grid-cols-4 gap-3 mb-6">
+        ${kpiHtml}
+      </div>
+
+      <!-- Filters bar -->
+      <div class="bg-white border border-ink-200/70 rounded-xl">
+        <div class="px-5 py-3 flex items-center gap-2 border-b border-ink-100">
+          <div class="relative flex-1 max-w-[360px]">
+            <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-ink-400"></i>
+            <input placeholder="Search by name, email, mobile…" class="h-9 pl-9 pr-3 w-full text-[13px] bg-ink-50/60 hover:bg-white focus:bg-white border border-transparent hover:border-ink-200 focus:border-ink-300 rounded-lg outline-none transition" />
+          </div>
+          <button class="h-9 px-3 rounded-lg border border-ink-200 text-[12.5px] font-medium flex items-center gap-1.5 hover:bg-ink-50">Membership <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-ink-500"></i></button>
+          <button class="h-9 px-3 rounded-lg border border-ink-200 text-[12.5px] font-medium flex items-center gap-1.5 hover:bg-ink-50">Tags <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-ink-500"></i></button>
+          <button class="h-9 px-3 rounded-lg border border-ink-200 text-[12.5px] font-medium flex items-center gap-1.5 hover:bg-ink-50">Status <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-ink-500"></i></button>
+          <div class="ml-auto text-[12px] text-ink-500">Showing <span class="font-medium text-ink-900">8</span> of 947</div>
+        </div>
+        <!-- header -->
+        <div class="grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
+          <div></div>
+          <div>Student</div>
+          <div>Membership</div>
+          <div>Tags</div>
+          <div>End date</div>
+          <div>Last call</div>
+          <div class="text-right">Status</div>
+        </div>
+        <div>${rows}</div>
+        <div class="px-6 py-3 flex items-center justify-between text-[12px] text-ink-500 border-t border-ink-100">
+          <div>Page 1 of 119</div>
+          <div class="flex items-center gap-1">
+            <button class="h-7 w-7 rounded-md border border-ink-200 grid place-items-center hover:bg-ink-50"><i data-lucide="chevron-left" class="w-3.5 h-3.5"></i></button>
+            <button class="h-7 w-7 rounded-md border border-ink-200 grid place-items-center hover:bg-ink-50 bg-ink-100">1</button>
+            <button class="h-7 w-7 rounded-md border border-ink-200 grid place-items-center hover:bg-ink-50">2</button>
+            <button class="h-7 w-7 rounded-md border border-ink-200 grid place-items-center hover:bg-ink-50">3</button>
+            <button class="h-7 w-7 rounded-md border border-ink-200 grid place-items-center hover:bg-ink-50"><i data-lucide="chevron-right" class="w-3.5 h-3.5"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+};
+function bindStudentsView() {
+  $$('.row-clickable').forEach(row => row.addEventListener('click', () => openStudent(row.dataset.student)));
+}
+
+function daysUntil(dateStr) {
+  // very rough — for prototype only
+  const map = { 'Jul':6, 'Jun':5, 'Apr':3, 'Sep':8, 'Mar':2, 'Aug':7 };
+  const m = dateStr.split(' ')[1];
+  return Math.floor(Math.random()*200) + 30;
+}
+
+/* ================ STUDENT SLIDE-OVER ================ */
+let activeStudent = null, activeTab = 'profile';
+
+function openStudent(id) {
+  activeStudent = STUDENTS.find(s => s.id === id);
+  activeTab = 'profile';
+  renderStudent();
+  $('#slideover').classList.add('open');
+}
+function closeStudent() {
+  $('#slideover').classList.remove('open');
+}
+
+function renderStudent() {
+  const s = activeStudent;
+  if (!s) return;
+  const calls = CALLS[s.id] || [];
+  const briefing = BRIEFINGS[s.id];
+
+  const tabPill = (id, label, badge) => `
+    <button data-tab="${id}" data-active="${activeTab===id}" class="tab-underline shrink-0 px-3 h-10 text-[13px] font-medium ${activeTab===id?'text-ink-900':'text-ink-500 hover:text-ink-800'} flex items-center gap-1.5">
+      ${label}${badge?`<span class="text-[10px] bg-ink-100 px-1.5 py-0.5 rounded ${activeTab===id?'bg-ink-900 text-white':''}">${badge}</span>`:''}
+    </button>
+  `;
+
+  const tab = (() => {
+    switch(activeTab){
+      case 'profile':  return profileTab(s);
+      case 'progress': return progressTab(s);
+      case 'calls':    return callsTab(s, calls, briefing);
+      case 'payments': return paymentsTab(s);
+    }
+  })();
+
+  $('#slideover-content').innerHTML = `
+    <!-- Header -->
+    <div class="px-7 pt-5 pb-4 border-b border-ink-100">
+      <div class="flex items-center gap-2 text-[12px] text-ink-500 mb-3">
+        <button onclick="closeStudent()" class="hover:text-ink-800 flex items-center gap-1"><i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Students</button>
+        <span class="text-ink-300">/</span>
+        <span class="text-ink-700 font-medium">${s.first} ${s.last}</span>
+        <button class="ml-auto w-7 h-7 rounded-md hover:bg-ink-100 grid place-items-center" onclick="closeStudent()"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+      <div class="flex items-start gap-4">
+        ${studentAvatar(s, 56)}
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 class="text-[20px] font-semibold tracking-tight">${s.first} ${s.last}</h2>
+            ${statusPill(s.status)}
+            ${s.upgrade?'<span class="text-[10.5px] font-medium text-accent-700 bg-accent-50 ring-1 ring-inset ring-accent-100 px-2 py-0.5 rounded-full">Upgrade candidate</span>':''}
+          </div>
+          <div class="flex items-center gap-3 text-[12.5px] text-ink-500 mt-1.5">
+            <span class="flex items-center gap-1"><i data-lucide="mail" class="w-3.5 h-3.5"></i> ${s.email}</span>
+            <span class="text-ink-300">·</span>
+            <span class="flex items-center gap-1"><i data-lucide="phone" class="w-3.5 h-3.5"></i> ${s.mobile}</span>
+          </div>
+          <div class="flex items-center gap-2 mt-2.5">
+            ${s.tags.map(t=>`<span class="text-[10.5px] font-medium px-2 py-0.5 rounded bg-ink-100 text-ink-700">${t}</span>`).join('')}
+            <button class="text-[10.5px] font-medium px-2 py-0.5 rounded border border-dashed border-ink-300 text-ink-500 hover:bg-ink-50 flex items-center gap-1"><i data-lucide="plus" class="w-3 h-3"></i> add tag</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="px-5 border-b border-ink-100 flex gap-1 overflow-x-auto no-scrollbar">
+      ${tabPill('profile','Profile',null)}
+      ${tabPill('progress','Progress',`${s.progress.filter(x=>x).length}/6`)}
+      ${tabPill('calls','Calls',calls.length)}
+      ${tabPill('payments','Payments', s.emi?s.emi.installment:null)}
+    </div>
+
+    <div class="flex-1 overflow-auto"><div class="px-7 py-6">${tab}</div></div>
+
+    <!-- Action bar -->
+    <div class="px-5 py-3 border-t border-ink-100 bg-white flex items-center gap-2">
+      <button onclick="setTab('calls')" class="h-9 px-3 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50 flex items-center gap-1.5"><i data-lucide="message-square-plus" class="w-4 h-4"></i> Log a call</button>
+      <button onclick="openReminderForStudent('${s.id}')" class="h-9 px-3 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50 flex items-center gap-1.5"><i data-lucide="send" class="w-4 h-4"></i> Send reminder</button>
+      <div class="ml-auto flex items-center gap-2 text-[11.5px] text-ink-500">
+        ${s.presence ? `<span class="flex items-center gap-1.5"><span class="presence-dot w-1.5 h-1.5 rounded-full bg-emerald-500"></span>${COACHES[s.presence].name} viewing</span>` : ''}
+        <span class="flex items-center gap-1"><i data-lucide="check-check" class="w-3.5 h-3.5 text-ink-400"></i> Saved 2s ago</span>
+      </div>
+    </div>
+  `;
+  // bind tabs
+  $$('[data-tab]', $('#slideover-content')).forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  lucide.createIcons();
+}
+
+function setTab(t) { activeTab = t; renderStudent(); }
+
+/* ====== Profile tab ====== */
+function profileTab(s) {
+  const field = (label, value, type='text') => `
+    <div class="grid grid-cols-[160px_1fr] items-center gap-3 py-2.5 border-b border-ink-100 last:border-0">
+      <div class="text-[12px] text-ink-500 font-medium">${label}</div>
+      <div class="text-[13.5px]">${value}</div>
+    </div>
+  `;
+  return `
+    <div class="space-y-7">
+      <div>
+        <h3 class="text-[12px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Identity</h3>
+        <div class="bg-white border border-ink-200/70 rounded-xl px-5">
+          ${field('First name', s.first)}
+          ${field('Last name', s.last)}
+          ${field('Email', s.email)}
+          ${field('Mobile', s.mobile)}
+        </div>
+      </div>
+      <div>
+        <h3 class="text-[12px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Program</h3>
+        <div class="bg-white border border-ink-200/70 rounded-xl px-5">
+          ${field('Membership', `<span class="font-medium">${s.membership}</span>`)}
+          ${field('Tags', s.tags.length ? s.tags.map(t=>`<span class="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 mr-1">${t}</span>`).join(''):'<span class="text-ink-400">none</span>')}
+          ${field('Start date', s.start)}
+          ${field('End date', `${s.end} <span class="text-ink-500 text-[11.5px] ml-1">(${s.status==='expired'?'expired':s.status==='expiring'?'expiring':'active'})</span>`)}
+        </div>
+      </div>
+      <div>
+        <h3 class="text-[12px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Background</h3>
+        <div class="bg-white border border-ink-200/70 rounded-xl p-5">
+          <div class="text-[13.5px] leading-relaxed text-ink-800">${s.background}</div>
+          <div class="mt-3 pt-3 border-t border-ink-100 flex items-center gap-2">
+            <button class="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1"><i data-lucide="pencil" class="w-3 h-3"></i> Edit</button>
+            <button onclick="simulateVoice(this)" class="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1"><i data-lucide="mic" class="w-3 h-3"></i> Dictate</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ====== Progress tab ====== */
+function progressTab(s) {
+  const completed = s.progress.filter(x=>x).length;
+  const cells = s.progress.map((v,i) => `
+    <div class="flex-1 ${v?'bg-emerald-500':'bg-ink-200'} h-1.5 rounded-full"></div>
+  `).join('');
+  return `
+    <div class="space-y-6">
+      <div class="bg-white border border-ink-200/70 rounded-xl p-5">
+        <div class="flex items-end justify-between mb-3">
+          <div>
+            <div class="text-[12px] text-ink-500 font-medium">Course completion</div>
+            <div class="text-[28px] font-semibold tracking-tight leading-none mt-1">${completed} <span class="text-ink-400 font-normal text-[18px]">/ 6 months</span></div>
+          </div>
+          <div class="text-[11.5px] text-ink-500">${Math.round(completed/6*100)}% complete</div>
+        </div>
+        <div class="flex items-center gap-1.5">${cells}</div>
+        <div class="mt-3 grid grid-cols-6 gap-1.5 text-[11px] text-center text-ink-500">
+          ${[1,2,3,4,5,6].map((m,i)=>`<div class="py-1 rounded ${s.progress[i]?'bg-emerald-50 text-emerald-700 font-medium':'bg-ink-50'}">M${m}</div>`).join('')}
+        </div>
+      </div>
+      <div class="bg-white border border-ink-200/70 rounded-xl p-5">
+        <h3 class="text-[14px] font-semibold mb-3">Monthly checkpoints</h3>
+        <div class="space-y-1.5">
+          ${[1,2,3,4,5,6].map((m,i) => `
+            <label class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-ink-50 cursor-pointer">
+              <span class="w-5 h-5 rounded ${s.progress[i]?'bg-emerald-500':'bg-white border border-ink-300'} grid place-items-center">${s.progress[i]?'<i data-lucide=\"check\" class=\"w-3 h-3 text-white\"></i>':''}</span>
+              <span class="text-[13.5px] font-medium">Month ${m}</span>
+              <span class="ml-auto text-[11.5px] text-ink-500">${s.progress[i]?'Completed':'Pending'}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ====== Calls tab — the showpiece ====== */
+function callsTab(s, calls, briefing) {
+  const briefingHtml = briefing ? `
+    <div class="briefing-card rounded-2xl p-6 mb-6 relative overflow-hidden">
+      <div class="flex items-start justify-between mb-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-accent-50 grid place-items-center">
+            <i data-lucide="sparkles" class="w-[18px] h-[18px] text-accent-600"></i>
+          </div>
+          <div>
+            <div class="font-semibold text-[14px] tracking-tight">AI Briefing</div>
+            <div class="text-[11.5px] text-ink-500">Based on ${calls.length} calls · regenerated just now</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1">
+          <button class="h-7 w-7 rounded-md hover:bg-ink-100 grid place-items-center" title="Regenerate"><i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-ink-500"></i></button>
+          <button class="h-7 w-7 rounded-md hover:bg-ink-100 grid place-items-center" title="Copy"><i data-lucide="copy" class="w-3.5 h-3.5 text-ink-500"></i></button>
+          <button class="h-7 w-7 rounded-md hover:bg-ink-100 grid place-items-center" title="Collapse"><i data-lucide="chevron-up" class="w-3.5 h-3.5 text-ink-500"></i></button>
+        </div>
+      </div>
+
+      <p class="text-[13.5px] leading-relaxed text-ink-800 mb-5">${briefing.story}</p>
+
+      <div class="briefing-divider h-px my-5"></div>
+
+      <div class="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 mb-3">Ongoing threads</div>
+      <div class="space-y-3 mb-5">
+        ${briefing.threads.map(t => `
+          <div class="flex items-start gap-3">
+            ${avatar(t.coach, 28)}
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-[13px]">${COACHES[t.coach].name}</span>
+                <span class="text-[11px] text-ink-500">${t.dates}</span>
+              </div>
+              <div class="text-[13px] text-ink-700 mt-0.5 leading-snug">${t.topic}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="briefing-divider h-px my-5"></div>
+
+      <div class="grid grid-cols-2 gap-5">
+        <div>
+          <div class="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">Open actions</div>
+          <div class="space-y-1.5">
+            ${briefing.actions.map(a => `
+              <div class="flex items-center gap-2 text-[12.5px]">
+                <i data-lucide="circle" class="w-3.5 h-3.5 text-amber-500"></i>
+                <span class="font-medium">${a.who}</span>
+                <span class="text-ink-700">${a.what}</span>
+                <span class="ml-auto text-[10.5px] text-ink-500">${a.due}</span>
+              </div>
+            `).join('') || '<div class="text-[12px] text-ink-400">None</div>'}
+          </div>
+        </div>
+        <div>
+          <div class="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">Flags</div>
+          <div class="space-y-1.5">
+            ${briefing.flags.length ? briefing.flags.map(f => `
+              <div class="flex items-start gap-2 text-[12.5px] text-ink-700">
+                <i data-lucide="alert-triangle" class="w-3.5 h-3.5 text-rose-500 mt-0.5 shrink-0"></i>
+                <span>${f}</span>
+              </div>
+            `).join('') : '<div class="text-[12px] text-ink-400">No concerns</div>'}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-5 pt-4 border-t border-ink-100/80 flex items-center gap-2 text-[11px] text-ink-400">
+        <i data-lucide="info" class="w-3.5 h-3.5"></i>
+        AI-generated · verify before quoting · powered by Claude Haiku
+      </div>
+    </div>
+  ` : '';
+
+  const composer = `
+    <div class="bg-white border border-ink-200/70 rounded-2xl p-5 mb-6">
+      <div class="text-[12px] uppercase tracking-wider font-semibold text-ink-500 mb-2.5">Log a call</div>
+      <textarea id="call-textarea" rows="3" placeholder="How did the call go?" class="w-full text-[13.5px] leading-relaxed outline-none resize-none placeholder:text-ink-400"></textarea>
+      <div class="flex items-center gap-2 mt-2 pt-3 border-t border-ink-100">
+        <select class="h-8 px-2.5 rounded-md border border-ink-200 text-[12px] font-medium bg-white">
+          <option>Outcome…</option>
+          <option>Connected</option>
+          <option>No answer</option>
+          <option>Rescheduled</option>
+          <option>Wrong number</option>
+        </select>
+        <button class="h-8 px-2.5 rounded-md border border-ink-200 text-[12px] font-medium hover:bg-ink-50 flex items-center gap-1"><i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i> Next action</button>
+        <button onclick="simulateVoice(this)" class="h-8 px-2.5 rounded-md border border-ink-200 text-[12px] font-medium hover:bg-ink-50 flex items-center gap-1"><i data-lucide="mic" class="w-3.5 h-3.5"></i> Dictate</button>
+        <button class="ml-auto btn-primary h-8 px-3 rounded-md text-white text-[12px] font-medium flex items-center gap-1.5">Save call <i data-lucide="corner-down-left" class="w-3.5 h-3.5"></i></button>
+      </div>
+    </div>
+  `;
+
+  const timeline = `
+    <div class="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 mb-3">Timeline · ${calls.length}</div>
+    <div class="relative pl-6">
+      <div class="absolute left-2.5 top-2 bottom-2 w-px bg-ink-200"></div>
+      ${calls.map((c, i) => `
+        <div class="relative pb-5 last:pb-0">
+          <div class="absolute -left-[14px] top-1.5 w-2.5 h-2.5 rounded-full ${c.outcome==='connected'?'bg-emerald-500':c.outcome==='no_answer'?'bg-rose-400':'bg-ink-300'} ring-4 ring-white"></div>
+          <div class="bg-white border border-ink-200/70 rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-2">
+              ${avatar(c.coach, 24)}
+              <div class="text-[13px] font-medium">${COACHES[c.coach].name}${c.coach==='AK'?' <span class=\"text-ink-500 font-normal\">(you)</span>':''}</div>
+              <div class="text-[11.5px] text-ink-500">${c.date}</div>
+              <span class="ml-auto text-[10.5px] font-medium px-2 py-0.5 rounded-full ring-1 ring-inset ${c.outcome==='connected'?'bg-emerald-50 text-emerald-700 ring-emerald-100':c.outcome==='no_answer'?'bg-rose-50 text-rose-700 ring-rose-100':'bg-ink-100 text-ink-600 ring-ink-200'}">${c.outcome.replace('_',' ')}</span>
+            </div>
+            <div class="text-[13px] leading-relaxed text-ink-800">${c.comment}</div>
+            ${c.next ? `<div class="mt-3 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-ink-700 bg-ink-50 px-2 py-1 rounded-md"><i data-lucide="arrow-right" class="w-3 h-3"></i> ${c.next}</div>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  return briefingHtml + composer + timeline;
+}
+
+/* ====== Payments tab ====== */
+function paymentsTab(s) {
+  if (!s.emi) return '<div class="text-ink-500 text-[13px]">No EMI schedule on file.</div>';
+  const total = 9;
+  const current = parseInt(s.emi.installment.split('/')[0]);
+  const rows = Array.from({length: total}).map((_,i) => {
+    const n = i+1;
+    const status = n < current ? 'paid' : n===current ? s.emi.state : 'upcoming';
+    return `
+      <div class="grid grid-cols-[40px_1fr_120px_140px_100px] gap-3 px-4 py-3 items-center border-b border-ink-100 last:border-0 text-[13px]">
+        <div class="font-mono text-[11.5px] text-ink-500">${n}/${total}</div>
+        <div>${fmtINR(s.emi.amount)}</div>
+        <div class="text-ink-600">${n===current ? s.emi.due : '—'}</div>
+        <div>${statusPill(status)}</div>
+        <div class="text-right">${status==='paid'?'<span class="text-[11.5px] text-ink-400">Paid 12 Apr</span>':status==='upcoming'?'<span class="text-[11.5px] text-ink-400">—</span>':`<button onclick="openReminderForStudent('${s.id}')" class="text-[11.5px] font-medium text-accent-700 hover:underline">Send reminder</button>`}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="space-y-5">
+      <div class="grid grid-cols-3 gap-3">
+        ${[
+          ['Total program fee', fmtINR(s.emi.amount * 9), 'across 9 EMIs'],
+          ['Paid so far', fmtINR(s.emi.amount * (current-1)), `${current-1} of 9`],
+          ['Outstanding', fmtINR(s.emi.amount * (9 - (current-1))), `${9-(current-1)} EMIs left`],
+        ].map(([l,v,sub]) => `
+          <div class="bg-white border border-ink-200/70 rounded-xl p-4">
+            <div class="text-[12px] text-ink-500 font-medium">${l}</div>
+            <div class="text-[20px] font-semibold tracking-tight mt-1">${v}</div>
+            <div class="text-[11.5px] text-ink-500">${sub}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="bg-white border border-ink-200/70 rounded-xl">
+        <div class="grid grid-cols-[40px_1fr_120px_140px_100px] gap-3 px-4 py-2.5 border-b border-ink-100 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">
+          <div>#</div><div>Amount</div><div>Due date</div><div>Status</div><div class="text-right">Action</div>
+        </div>
+        ${rows}
+      </div>
+    </div>
+  `;
+}
+
+/* ================ EMI VIEW ================ */
+VIEWS.emi = () => {
+  const tabs = ['Due this week','Overdue','Upcoming','Paid'];
+
+  const rows = EMIS.map(e => `
+    <div class="grid grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_120px] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0 text-[13px]">
+      <div class="flex items-center gap-2.5 min-w-0">
+        ${studentAvatar(STUDENTS.find(s=>s.id===e.studentId), 30)}
+        <div class="min-w-0">
+          <div class="font-medium truncate">${e.name}</div>
+          <div class="text-[11.5px] text-ink-500 truncate">${STUDENTS.find(s=>s.id===e.studentId).email}</div>
+        </div>
+      </div>
+      <div class="font-mono text-[12px] text-ink-700">${e.installment}</div>
+      <div class="font-medium">${fmtINR(e.amount)}</div>
+      <div class="text-ink-700">${e.due}</div>
+      <div>${statusPill(e.state)}</div>
+      <div class="flex items-center justify-end gap-1">
+        <button onclick="openReminderForStudent('${e.studentId}')" class="btn-primary h-8 px-3 rounded-md text-white text-[12px] font-medium flex items-center gap-1.5">
+          <i data-lucide="send" class="w-3.5 h-3.5"></i> Send
+        </button>
+        <button class="h-8 w-8 rounded-md border border-ink-200 hover:bg-ink-50 grid place-items-center"><i data-lucide="more-horizontal" class="w-4 h-4 text-ink-500"></i></button>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="px-7 py-7 max-w-[1400px]">
+      <div class="flex items-end justify-between mb-6">
+        <div>
+          <h1 class="text-[24px] font-semibold tracking-tight">EMI Tracker</h1>
+          <p class="text-[13.5px] text-ink-500 mt-1">Auto-scheduled reminders fire daily at 09:00 IST. Manual sends override the queue.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="h-9 px-3 rounded-lg border border-ink-200 hover:bg-ink-50 text-[13px] font-medium flex items-center gap-1.5"><i data-lucide="download" class="w-4 h-4"></i> Export</button>
+          <button class="btn-primary h-9 px-3.5 rounded-lg text-white text-[13px] font-medium flex items-center gap-1.5"><i data-lucide="plus" class="w-4 h-4"></i> Add EMI</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-4 gap-3 mb-6">
+        ${[
+          ['Due this week', '₹2.42 L', '12 students', 'amber'],
+          ['Overdue', '₹86,200', '5 students', 'rose'],
+          ['Collected MTD', '₹14.7 L', '↑ 8% vs last', 'emerald'],
+          ['Active EMIs', '86', '6 paying installments', 'neutral'],
+        ].map(([l,v,sub,tone]) => `
+          <div class="bg-white border border-ink-200/70 rounded-xl p-4">
+            <div class="flex items-start justify-between">
+              <div class="text-[12px] text-ink-500 font-medium">${l}</div>
+              <div class="w-7 h-7 rounded-lg grid place-items-center
+                   ${tone==='emerald'?'bg-emerald-50 text-emerald-600':tone==='amber'?'bg-amber-50 text-amber-600':tone==='rose'?'bg-rose-50 text-rose-600':'bg-ink-100 text-ink-500'}">
+                <i data-lucide="${tone==='emerald'?'trending-up':tone==='amber'?'clock':tone==='rose'?'alert-triangle':'list'}" class="w-4 h-4"></i>
+              </div>
+            </div>
+            <div class="text-[26px] font-semibold tracking-tight mt-2">${v}</div>
+            <div class="text-[12px] text-ink-500">${sub}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="bg-white border border-ink-200/70 rounded-xl">
+        <div class="px-5 py-2 border-b border-ink-100 flex gap-1">
+          ${tabs.map((t,i) => `<button class="px-3 h-9 text-[12.5px] font-medium rounded-md ${i===0?'bg-ink-100 text-ink-900':'text-ink-500 hover:bg-ink-50'}">${t}</button>`).join('')}
+          <div class="ml-auto flex items-center gap-2 text-[11.5px] text-ink-500"><i data-lucide="zap" class="w-3.5 h-3.5"></i> Auto-scheduler ON · next run 09:00 tomorrow</div>
+        </div>
+        <div class="grid grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_120px] gap-4 px-6 py-2.5 border-b border-ink-100 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">
+          <div>Student</div><div>Installment</div><div>Amount</div><div>Due date</div><div>Status</div><div class="text-right">Action</div>
+        </div>
+        ${rows}
+      </div>
+    </div>
+  `;
+};
+function bindEmiView(){}
+
+/* ================ REMINDERS / SETTINGS VIEW ================ */
+VIEWS.reminders = () => `
+  <div class="px-7 py-7 max-w-[1100px]">
+    <div class="mb-6">
+      <h1 class="text-[24px] font-semibold tracking-tight">Reminders & Automations</h1>
+      <p class="text-[13.5px] text-ink-500 mt-1">Every event below maps to a GoHighLevel workflow you control. Toggle off, change schedule, or test-fire any event.</p>
+    </div>
+    ${reminderEventsCard()}
+  </div>
+`;
+VIEWS.settings = VIEWS.reminders;
+VIEWS.calls = () => `
+  <div class="px-7 py-7 max-w-[1200px]">
+    <div class="mb-6">
+      <h1 class="text-[24px] font-semibold tracking-tight">Call Queue</h1>
+      <p class="text-[13.5px] text-ink-500 mt-1">Your personal queue today, generated from briefings and follow-up dates.</p>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      ${STUDENTS.slice(0,4).map(s => `
+        <div class="bg-white border border-ink-200/70 rounded-xl p-5 hover:shadow-soft transition cursor-pointer" onclick="openStudent('${s.id}')">
+          <div class="flex items-start gap-3 mb-3">
+            ${studentAvatar(s, 40)}
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold">${s.first} ${s.last}</div>
+              <div class="text-[11.5px] text-ink-500">${s.mobile}</div>
+            </div>
+            ${statusPill(s.status)}
+          </div>
+          <div class="text-[12.5px] text-ink-700 leading-relaxed mb-3">${BRIEFINGS[s.id]?.story?.slice(0,140)+'…' || s.background}</div>
+          <div class="flex items-center gap-2">
+            <button class="btn-primary h-8 px-3 rounded-md text-white text-[12px] font-medium flex items-center gap-1.5"><i data-lucide="phone" class="w-3.5 h-3.5"></i> Call now</button>
+            <button class="h-8 px-3 rounded-md border border-ink-200 text-[12px] font-medium hover:bg-ink-50">Skip</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  </div>
+`;
+VIEWS.reports = () => `
+  <div class="px-7 py-7 max-w-[1200px]">
+    <h1 class="text-[24px] font-semibold tracking-tight mb-1">Reports</h1>
+    <p class="text-[13.5px] text-ink-500 mb-6">Coverage, conversion, and collection at a glance.</p>
+    <div class="grid grid-cols-3 gap-3 mb-6">
+      ${[
+        ['Calls per student / month','4.2','target ≥ 4'],
+        ['Reminder delivery rate','98.7%','GHL · last 30 d'],
+        ['Collection vs target','82%','MTD'],
+      ].map(([l,v,sub])=>`
+        <div class="bg-white border border-ink-200/70 rounded-xl p-5">
+          <div class="text-[12px] text-ink-500 font-medium">${l}</div>
+          <div class="text-[28px] font-semibold tracking-tight mt-1">${v}</div>
+          <div class="text-[11.5px] text-ink-500">${sub}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="bg-white border border-ink-200/70 rounded-xl p-5 h-72 grid place-items-center text-ink-400 text-[13px]">
+      <div class="text-center">
+        <i data-lucide="line-chart" class="w-8 h-8 mx-auto mb-2 text-ink-300"></i>
+        Reports module — charts wire up in v1.1
+      </div>
+    </div>
+  </div>
+`;
+
+function reminderEventsCard() {
+  return `
+    <div class="bg-white border border-ink-200/70 rounded-xl">
+      <div class="px-5 py-3 border-b border-ink-100 flex items-center justify-between">
+        <div class="text-[13px] font-semibold">Event catalog</div>
+        <button class="h-8 px-3 rounded-md text-[12px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1.5"><i data-lucide="play" class="w-3.5 h-3.5"></i> Test-fire any event</button>
+      </div>
+      <div class="grid grid-cols-[1fr_120px_140px_140px_60px] gap-4 px-5 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
+        <div>Event</div>
+        <div>Recipient</div>
+        <div>Schedule</div>
+        <div>GHL workflow</div>
+        <div class="text-right">On</div>
+      </div>
+      ${REMINDER_EVENTS.map(e => `
+        <div class="grid grid-cols-[1fr_120px_140px_140px_60px] gap-4 px-5 py-3.5 items-center border-b border-ink-100 last:border-0 text-[13px]">
+          <div>
+            <div class="font-medium">${e.name}</div>
+            <code class="text-[10.5px] text-ink-500 font-mono">${e.id}</code>
+          </div>
+          <div>
+            <span class="text-[11.5px] font-medium px-2 py-0.5 rounded-full ring-1 ring-inset ${e.recipient==='Student'?'bg-accent-50 text-accent-700 ring-accent-100':e.recipient==='Coach'?'bg-emerald-50 text-emerald-700 ring-emerald-100':'bg-amber-50 text-amber-800 ring-amber-100'}">${e.recipient}</span>
+          </div>
+          <div class="text-ink-700 text-[12.5px]">${e.schedule}</div>
+          <div>
+            <button class="text-[12px] underline-offset-2 hover:underline text-accent-700 flex items-center gap-1">${e.id.split('.')[0]}-flow <i data-lucide="external-link" class="w-3 h-3"></i></button>
+          </div>
+          <div class="flex justify-end">
+            <button class="relative w-8 h-[18px] rounded-full transition ${e.enabled?'bg-emerald-500':'bg-ink-200'}">
+              <span class="absolute top-[2px] ${e.enabled?'right-[2px]':'left-[2px]'} w-3.5 h-3.5 bg-white rounded-full shadow"></span>
+            </button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+function bindRemindersView(){}
+
+/* ================ REMINDER MODAL ================ */
+function openReminderForStudent(id) {
+  const s = STUDENTS.find(x=>x.id===id);
+  if (!s || !s.emi) { toast('No EMI scheduled for this student'); return; }
+  const message = `Hi ${s.first}, your EMI of ${fmtINR(s.emi.amount)} (${s.emi.installment}) is due on ${s.emi.due}. Pay here: baking.dva.com/pay/${s.id}\n— Team DVA`;
+  $('#modal-content').innerHTML = `
+    <div class="p-6">
+      <div class="flex items-start justify-between mb-5">
+        <div>
+          <div class="text-[18px] font-semibold tracking-tight">Send reminder</div>
+          <div class="text-[12.5px] text-ink-500 mt-0.5">via GoHighLevel · routes to student's preferred channel</div>
+        </div>
+        <button onclick="closeModal()" class="w-8 h-8 rounded-md hover:bg-ink-100 grid place-items-center"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
+
+      <div class="bg-ink-50 rounded-xl p-3.5 flex items-center gap-3 mb-5">
+        ${studentAvatar(s, 36)}
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold text-[13.5px]">${s.first} ${s.last}</div>
+          <div class="text-[12px] text-ink-500">${s.mobile}</div>
+        </div>
+        <div class="text-right">
+          <div class="font-mono text-[11.5px] text-ink-500">${s.emi.installment}</div>
+          <div class="font-semibold text-[14px]">${fmtINR(s.emi.amount)}</div>
+        </div>
+      </div>
+
+      <div class="text-[11.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">Channel</div>
+      <div class="grid grid-cols-3 gap-2 mb-5">
+        ${[['whatsapp','WhatsApp','message-circle',true],['sms','SMS','smartphone',false],['email','Email','mail',false]].map(([id,l,ic,sel])=>`
+          <button class="h-10 rounded-lg text-[13px] font-medium flex items-center justify-center gap-2 ${sel?'border-2 border-accent-500 bg-accent-50/40 text-accent-700':'border border-ink-200 hover:bg-ink-50'}"><i data-lucide="${ic}" class="w-4 h-4"></i> ${l}</button>
+        `).join('')}
+      </div>
+
+      <div class="text-[11.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">GHL Workflow</div>
+      <button class="h-10 px-3 w-full rounded-lg border border-ink-200 hover:bg-ink-50 text-left text-[13px] mb-5 flex items-center justify-between">
+        <span><span class="font-medium">EMI Reminder · Diamond</span> <span class="text-ink-500">— wf_a3k9d</span></span>
+        <i data-lucide="chevron-down" class="w-4 h-4 text-ink-500"></i>
+      </button>
+
+      <div class="text-[11.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">Preview</div>
+      <div class="bg-emerald-50/30 border border-emerald-100 rounded-xl p-3.5 mb-5 text-[13px] leading-relaxed whitespace-pre-line text-ink-800">${message}</div>
+
+      <div class="text-[11.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">When</div>
+      <div class="space-y-2 mb-6">
+        <label class="flex items-center gap-2.5 px-3 h-10 rounded-lg border-2 border-accent-500 bg-accent-50/40 cursor-pointer">
+          <span class="w-4 h-4 rounded-full bg-accent-600 ring-4 ring-accent-100"></span>
+          <span class="font-medium text-[13px]">Send now</span>
+          <span class="ml-auto text-[11.5px] text-ink-500">Fires within 2 seconds</span>
+        </label>
+        <label class="flex items-center gap-2.5 px-3 h-10 rounded-lg border border-ink-200 hover:bg-ink-50 cursor-pointer">
+          <span class="w-4 h-4 rounded-full border-2 border-ink-300"></span>
+          <span class="font-medium text-[13px]">On reminder date</span>
+          <span class="ml-auto text-[11.5px] text-ink-500">11 May · 09:00 IST</span>
+        </label>
+        <label class="flex items-center gap-2.5 px-3 h-10 rounded-lg border border-ink-200 hover:bg-ink-50 cursor-pointer">
+          <span class="w-4 h-4 rounded-full border-2 border-ink-300"></span>
+          <span class="font-medium text-[13px]">Custom…</span>
+        </label>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button onclick="closeModal()" class="h-10 px-4 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50">Cancel</button>
+        <button onclick="closeModal(); toast('Reminder sent · GHL workflow triggered','success')" class="btn-primary ml-auto h-10 px-5 rounded-lg text-white text-[13px] font-medium flex items-center gap-2">Send via GHL <i data-lucide="send" class="w-4 h-4"></i></button>
+      </div>
+    </div>
+  `;
+  lucide.createIcons();
+  $('#modal').classList.add('open');
+}
+function closeModal() { $('#modal').classList.remove('open'); }
+
+/* ================ TOASTS ================ */
+function toast(message, type='info') {
+  const ic = type==='success'?'check-circle':type==='error'?'x-circle':'info';
+  const cls = type==='success'?'border-emerald-200 bg-emerald-50 text-emerald-900':type==='error'?'border-rose-200 bg-rose-50 text-rose-900':'border-ink-200 bg-white';
+  const el = document.createElement('div');
+  el.className = `toast border ${cls} shadow-pop rounded-xl px-4 py-3 flex items-center gap-3 text-[13px] font-medium`;
+  el.innerHTML = `<i data-lucide="${ic}" class="w-4 h-4"></i><span>${message}</span>`;
+  $('#toasts').appendChild(el);
+  lucide.createIcons();
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => { el.classList.remove('show'); setTimeout(()=>el.remove(), 300); }, 3200);
+}
+
+/* ================ VOICE SIMULATION ================ */
+function simulateVoice(btn) {
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500 rec-pulse"></span> Listening… <span class="font-mono">0:03</span>`;
+  let s = 3;
+  const t = setInterval(() => {
+    s++;
+    btn.querySelector('span:last-child').textContent = `0:0${s}`;
+    if (s >= 6) {
+      clearInterval(t);
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Transcribing…`;
+      lucide.createIcons();
+      setTimeout(() => {
+        const ta = $('#call-textarea');
+        if (ta) ta.value = (ta.value ? ta.value+'\n\n' : '') + 'Connected with student. Spoke about WhatsApp marketing — she is ready to push a 7-day plan starting Monday.';
+        btn.innerHTML = original;
+        btn.disabled = false;
+        lucide.createIcons();
+        toast('Transcribed via Whisper · 6 sec audio', 'success');
+      }, 900);
+    }
+  }, 1000);
+}
+
+/* ================ CMDK ================ */
+function openCmdk() {
+  const list = STUDENTS.map(s => `
+    <button onclick="closeCmdk(); openStudent('${s.id}')" class="w-full text-left px-4 py-2.5 hover:bg-ink-50 flex items-center gap-3">
+      ${studentAvatar(s, 28)}
+      <div class="flex-1 min-w-0">
+        <div class="text-[13.5px] font-medium">${s.first} ${s.last}</div>
+        <div class="text-[11.5px] text-ink-500">${s.email}</div>
+      </div>
+      <span class="text-[10.5px] text-ink-400">${s.membership}</span>
+    </button>
+  `).join('');
+  $('#cmdk-list').innerHTML = `
+    <div class="px-4 py-1.5 text-[10.5px] uppercase tracking-wider text-ink-400 font-semibold">Students</div>
+    ${list}
+    <div class="px-4 py-1.5 mt-2 text-[10.5px] uppercase tracking-wider text-ink-400 font-semibold">Quick actions</div>
+    <button onclick="closeCmdk(); showView('emi')" class="w-full text-left px-4 py-2.5 hover:bg-ink-50 flex items-center gap-3 text-[13.5px]"><i data-lucide="indian-rupee" class="w-4 h-4 text-ink-500"></i> Open EMI Tracker</button>
+    <button onclick="closeCmdk(); showView('reminders')" class="w-full text-left px-4 py-2.5 hover:bg-ink-50 flex items-center gap-3 text-[13.5px]"><i data-lucide="bell-ring" class="w-4 h-4 text-ink-500"></i> Configure reminders</button>
+  `;
+  lucide.createIcons();
+  $('#cmdk').classList.add('open');
+  setTimeout(() => $('#cmdk-input').focus(), 50);
+}
+function closeCmdk() { $('#cmdk').classList.remove('open'); }
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openCmdk(); }
+  if (e.key === 'Escape') { closeStudent(); closeModal(); closeCmdk(); }
+});
+
+/* ================ INIT ================ */
+showView('students');
+lucide.createIcons();
+
+// Friendly first-run toast
+setTimeout(() => toast('Click any student row to see the slide-over · ⌘K to search', 'info'), 600);
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+**/.env.local
+
+# Vercel
+.vercel/
+
+# Logs
+*.log
+**/install.log
+**/dev.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+Thumbs.db
+
+# Production data (PII) — import via scripts/import-excel.ts instead
+DVA_Diamond_Master_sheet.xlsx
+Diamond_EMI_Tracker.xlsx
+
+# TypeScript build info
+*.tsbuildinfo
+next-env.d.ts
