@@ -18,11 +18,15 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
     sb.from('emi_schedule').select('amount').eq('status', 'overdue'),
   ]);
 
-  // Build a map of {student_id -> most recent call_log.created_at} for the
-  // students we're about to display. One query, ordered desc, deduped in JS.
+  // Build a map of {student_id -> most recent call_log.created_at}
+  // and {student_id -> most recent paid EMI {mode, date}} for the
+  // students we're about to display.
   const studentIds = (students ?? []).map((s: any) => s.id);
   const lastCallByStudent: Record<string, string> = {};
+  const lastPaymentByStudent: Record<string, { mode: string; date: string }> = {};
+
   if (studentIds.length > 0) {
+    // Most recent call per student
     const { data: calls } = await sb
       .from('call_logs')
       .select('student_id, created_at')
@@ -31,6 +35,20 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
     for (const c of (calls ?? []) as any[]) {
       if (!lastCallByStudent[c.student_id]) {
         lastCallByStudent[c.student_id] = c.created_at;
+      }
+    }
+
+    // Most recent paid EMI per student (with payment mode)
+    const { data: paidEmis } = await sb
+      .from('emi_schedule')
+      .select('student_id, paid_date, payment_mode')
+      .in('student_id', studentIds)
+      .eq('status', 'paid')
+      .not('paid_date', 'is', null)
+      .order('paid_date', { ascending: false });
+    for (const e of (paidEmis ?? []) as any[]) {
+      if (!lastPaymentByStudent[e.student_id] && e.payment_mode) {
+        lastPaymentByStudent[e.student_id] = { mode: e.payment_mode, date: e.paid_date };
       }
     }
   }
@@ -75,6 +93,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
         totalCount={total}
         initialFilter={activeFilter}
         lastCallByStudent={lastCallByStudent}
+        lastPaymentByStudent={lastPaymentByStudent}
       />
     </div>
   );

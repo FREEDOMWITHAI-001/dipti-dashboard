@@ -17,17 +17,23 @@ type InitialFilter = 'all' | StatusKey;
 const PAGE_SIZE = 10;
 
 export function StudentsTable({
-  initialStudents, totalCount, initialFilter = 'all', lastCallByStudent = {},
+  initialStudents,
+  totalCount,
+  initialFilter = 'all',
+  lastCallByStudent = {},
+  lastPaymentByStudent = {},
 }: {
   initialStudents: Row[];
   totalCount: number;
   initialFilter?: InitialFilter;
   lastCallByStudent?: Record<string, string>;
+  lastPaymentByStudent?: Record<string, { mode: string; date: string }>;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const [students, setStudents] = useState(initialStudents);
   const [lastCalls, setLastCalls] = useState<Record<string, string>>(lastCallByStudent);
+  const [lastPayments, setLastPayments] = useState<Record<string, { mode: string; date: string }>>(lastPaymentByStudent);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [memberships, setMemberships] = useState<Set<string>>(new Set());
@@ -39,26 +45,32 @@ export function StudentsTable({
 
   useEffect(() => { setStudents(initialStudents); }, [initialStudents]);
   useEffect(() => { setLastCalls(lastCallByStudent); }, [lastCallByStudent]);
+  useEffect(() => { setLastPayments(lastPaymentByStudent); }, [lastPaymentByStudent]);
 
-  // When the ?filter= param changes (KPI card clicked), sync table state.
   useEffect(() => {
     setStatuses(initialFilter !== 'all' ? new Set([initialFilter]) : new Set());
   }, [initialFilter]);
 
-  // Live-refresh: any change in students OR a new call → re-fetch the page so
-  // the table picks up the latest "last call" date without a manual reload.
+  // Live updates: refresh when students change, when calls are logged, or when
+  // EMIs are marked paid (each affects a column shown here).
   useEffect(() => {
     const ch = sb.channel('students-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
         router.refresh();
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_logs' }, (payload: any) => {
-        // Optimistic patch: bump the local lastCalls map immediately so the
-        // user sees the new "Last call" date without waiting for a refresh.
         const sid = payload?.new?.student_id;
         const at  = payload?.new?.created_at;
-        if (sid && at) {
-          setLastCalls((m) => ({ ...m, [sid]: at }));
+        if (sid && at) setLastCalls((m) => ({ ...m, [sid]: at }));
+        router.refresh();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'emi_schedule' }, (payload: any) => {
+        const next = payload?.new;
+        if (next?.status === 'paid' && next?.payment_mode && next?.student_id) {
+          setLastPayments((m) => ({
+            ...m,
+            [next.student_id]: { mode: next.payment_mode, date: next.paid_date ?? new Date().toISOString().slice(0, 10) },
+          }));
         }
         router.refresh();
       })
@@ -66,7 +78,10 @@ export function StudentsTable({
     return () => { sb.removeChannel(ch); };
   }, [sb, router]);
 
-  const allMemberships = useMemo(() => Array.from(new Set(students.map((s) => s.membership).filter(Boolean) as string[])).sort(), [students]);
+  const allMemberships = useMemo(
+    () => Array.from(new Set(students.map((s) => s.membership).filter(Boolean) as string[])).sort(),
+    [students]
+  );
   const allTags = useMemo(() => {
     const set = new Set<string>();
     students.forEach((s) => s.tags?.forEach((t) => set.add(t)));
@@ -102,7 +117,6 @@ export function StudentsTable({
     router.push(`?${p.toString()}` as any, { scroll: false });
   }
 
-  // Active filter banner (only shown when a KPI filter is set)
   const filterBanner =
     statuses.size === 1
       ? (statuses.has('active') ? 'Active students'
@@ -163,18 +177,26 @@ export function StudentsTable({
         </div>
       )}
 
-      <div className="grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
-        <div /><div>Student</div><div>Membership</div><div>Tags</div><div>End date</div><div>Last call</div><div className="text-right">Status</div>
+      <div className="grid grid-cols-[36px_1.5fr_0.9fr_0.9fr_0.75fr_0.85fr_0.9fr_0.5fr] gap-4 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
+        <div />
+        <div>Student</div>
+        <div>Membership</div>
+        <div>Tags</div>
+        <div>End date</div>
+        <div>Last call</div>
+        <div>Payment</div>
+        <div className="text-right">Status</div>
       </div>
 
       <div>
         {pageRows.map((s) => {
           const lastCallAt = lastCalls[s.id];
+          const lastPay = lastPayments[s.id];
           return (
             <button
               key={s.id}
               onClick={() => openStudent(s.id)}
-              className="row-clickable w-full text-left grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
+              className="row-clickable w-full text-left grid grid-cols-[36px_1.5fr_0.9fr_0.9fr_0.75fr_0.85fr_0.9fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
             >
               <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
               <div className="min-w-0">
@@ -192,20 +214,30 @@ export function StudentsTable({
               </div>
               <div className="text-[12.5px]">
                 <div className="font-medium">{fmtDateShort(s.end_date)}</div>
-                <div className="text-[10.5px] text-ink-500">{
-                  (() => {
+                <div className="text-[10.5px] text-ink-500">
+                  {(() => {
                     const d = daysFromNow(s.end_date);
                     if (d === null) return '—';
                     if (d < 0) return 'expired';
                     return `in ${d} d`;
-                  })()
-                }</div>
+                  })()}
+                </div>
               </div>
               <div className="text-[12.5px]">
                 {lastCallAt ? (
                   <>
                     <div className="font-medium text-ink-800">{fmtDateShort(lastCallAt)}</div>
                     <div className="text-[10.5px] text-ink-500">{relativeFromNow(lastCallAt)}</div>
+                  </>
+                ) : (
+                  <span className="text-ink-400">—</span>
+                )}
+              </div>
+              <div className="text-[12.5px]">
+                {lastPay ? (
+                  <>
+                    <div className="font-medium text-emerald-700">{lastPay.mode}</div>
+                    <div className="text-[10.5px] text-ink-500">paid {fmtDateShort(lastPay.date)}</div>
                   </>
                 ) : (
                   <span className="text-ink-400">—</span>
@@ -259,7 +291,6 @@ export function StudentsTable({
   );
 }
 
-// "in 3 d" / "2 d ago" / "today" — short relative-time string.
 function relativeFromNow(iso: string): string {
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return '';

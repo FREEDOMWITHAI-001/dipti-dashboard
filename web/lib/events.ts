@@ -2,8 +2,13 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ghlTriggerWorkflow, GhlError } from '@/lib/ghl/client';
+import { normalizePhone } from '@/lib/utils';
 
 type AnyClient = SupabaseClient<any, any, any>;
+
+function isWebhookUrl(v: string | null | undefined): boolean {
+  return !!v && (v.startsWith('http://') || v.startsWith('https://'));
+}
 
 export async function dispatchReminder(sb: AnyClient, args: {
   event: string;
@@ -31,16 +36,24 @@ export async function dispatchReminder(sb: AnyClient, args: {
     .from('reminders').insert(insert).select('id').single();
   if (insertErr) return { ok: false, error: insertErr.message };
 
-  if (!args.workflowId || !args.ghlContactId) {
+  if (!args.workflowId) {
     await sb.from('reminders').update({
       status: 'failed',
-      error: !args.workflowId ? 'workflow_id missing' : 'ghl_contact_id missing',
+      error: 'workflow_id missing — set it on the Reminders page',
     }).eq('id', row.id);
-    return { ok: false, reminderId: row.id, error: 'configuration missing' };
+    return { ok: false, reminderId: row.id, error: 'workflow_id missing' };
+  }
+
+  if (!isWebhookUrl(args.workflowId) && !args.ghlContactId) {
+    await sb.from('reminders').update({
+      status: 'failed',
+      error: 'ghl_contact_id missing — run Pull from GHL, or switch this event to a webhook URL',
+    }).eq('id', row.id);
+    return { ok: false, reminderId: row.id, error: 'ghl_contact_id missing' };
   }
 
   try {
-    await ghlTriggerWorkflow(args.ghlContactId, args.workflowId);
+    await ghlTriggerWorkflow(args.ghlContactId, args.workflowId, args.payload);
     await sb.from('reminders').update({
       status: 'sent', fired_at: new Date().toISOString(),
     }).eq('id', row.id);
@@ -53,7 +66,6 @@ export async function dispatchReminder(sb: AnyClient, args: {
 }
 
 export async function fireReminder(_event: string, _row: any) {
-  // Placeholder kept for symmetry with design docs.
   return null;
 }
 
@@ -70,7 +82,15 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
       emiId: r.id,
       ghlContactId: r.ghl_contact_id ?? null,
       workflowId,
-      payload: { amount: r.amount, due_date: r.due_date, installment: `${r.installment_no}/${r.installments_total}` },
+      payload: {
+        email: r.email,
+        first_name: r.first_name,
+        last_name: r.last_name,
+        phone: normalizePhone(r.mobile),
+        amount: r.amount,
+        due_date: r.due_date,
+        installment: `${r.installment_no}/${r.installments_total}`,
+      },
       triggeredBy: null,
     });
     if (out.ok) fired++;
@@ -88,7 +108,14 @@ export async function sweepEmiOverdue(sb: AnyClient, workflowId: string | null):
       emiId: r.id,
       ghlContactId: r.ghl_contact_id ?? null,
       workflowId,
-      payload: { amount: r.amount, due_date: r.due_date },
+      payload: {
+        email: r.email,
+        first_name: r.first_name,
+        last_name: r.last_name,
+        phone: normalizePhone(r.mobile),
+        amount: r.amount,
+        due_date: r.due_date,
+      },
       triggeredBy: null,
     });
     if (out.ok) fired++;
@@ -105,7 +132,13 @@ export async function sweepSilentStudents(sb: AnyClient, workflowId: string | nu
       studentId: r.id,
       ghlContactId: r.ghl_contact_id ?? null,
       workflowId,
-      payload: { last_touch: r.last_touch },
+      payload: {
+        email: r.email,
+        first_name: r.first_name,
+        last_name: r.last_name,
+        phone: normalizePhone(r.mobile),
+        last_touch: r.last_touch,
+      },
       triggeredBy: null,
     });
     if (out.ok) fired++;

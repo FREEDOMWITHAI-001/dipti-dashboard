@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { IndianRupee, Plus } from 'lucide-react';
+import { IndianRupee, Plus, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtINR, fmtDate } from '@/lib/utils';
 import { ReminderModal } from '@/components/reminders/reminder-modal';
 import { EmiSetupModal } from './emi-setup-modal';
+import { MarkPaidModal } from './mark-paid-modal';
 import type { Database } from '@/types/database';
 
 type Emi = Database['public']['Tables']['emi_schedule']['Row'];
@@ -22,6 +23,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
   const [rows, setRows] = useState<Emi[]>([]);
   const [student, setStudent] = useState<StudentSlim | null>(null);
   const [reminderEmi, setReminderEmi] = useState<string | null>(null);
+  const [payEmi, setPayEmi] = useState<Emi | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -101,29 +103,45 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
             <div className="text-[12px] font-semibold text-ink-700">EMI schedule</div>
             <div className="text-[11px] text-ink-500">{rows.length} installments</div>
           </div>
-          <div className="grid grid-cols-[60px_1fr_120px_140px_120px] gap-3 px-4 py-2 border-b border-ink-100 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">
+          <div className="grid grid-cols-[60px_1fr_120px_140px_180px] gap-3 px-4 py-2 border-b border-ink-100 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">
             <div>#</div><div>Amount</div><div>Due date</div><div>Status</div><div className="text-right">Action</div>
           </div>
           {rows.map((r) => (
-            <div key={r.id} className="grid grid-cols-[60px_1fr_120px_140px_120px] gap-3 px-4 py-3 items-center border-b border-ink-100 last:border-0 text-[13px]">
+            <div key={r.id} className="grid grid-cols-[60px_1fr_120px_140px_180px] gap-3 px-4 py-3 items-center border-b border-ink-100 last:border-0 text-[13px]">
               <div className="font-mono text-[11.5px] text-ink-500">{r.installment_no}/{r.installments_total}</div>
               <div>{fmtINR(Number(r.amount))}</div>
               <div className="text-ink-600">{fmtDate(r.due_date)}</div>
               <div><StatusPill status={r.status} /></div>
               <div className="text-right">
                 {r.status === 'paid' ? (
-                  <span className="text-[11.5px] text-ink-400">Paid {fmtDate(r.paid_date)}</span>
+                  <div className="text-[11.5px] text-ink-500 leading-tight">
+                    <div>Paid {fmtDate(r.paid_date)}</div>
+                    {r.payment_mode && (
+                      <div className="text-[10.5px] text-emerald-700 font-medium">via {r.payment_mode}</div>
+                    )}
+                  </div>
                 ) : (
-                  <button onClick={() => setReminderEmi(r.id)} className="text-[11.5px] font-medium text-accent-700 hover:underline">
-                    Send reminder
-                  </button>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => setReminderEmi(r.id)}
+                      className="text-[11.5px] font-medium text-ink-600 hover:text-ink-900 hover:underline"
+                    >
+                      Remind
+                    </button>
+                    <span className="text-ink-300">·</span>
+                    <button
+                      onClick={() => setPayEmi(r)}
+                      className="text-[11.5px] font-medium text-emerald-700 hover:underline inline-flex items-center gap-1"
+                    >
+                      <CheckCircle2 className="w-3 h-3" /> Mark paid
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        // Down payment exists but no EMI schedule — let admin add one
         <div className="bg-white border border-ink-200/70 rounded-xl p-5 flex items-center justify-between">
           <div>
             <div className="font-medium text-[13.5px]">No EMI schedule yet</div>
@@ -137,6 +155,16 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
 
       {reminderEmi && (
         <ReminderModal open={!!reminderEmi} onClose={() => setReminderEmi(null)} studentId={studentId} emiId={reminderEmi} />
+      )}
+      {payEmi && (
+        <MarkPaidModal
+          open={!!payEmi}
+          onClose={() => setPayEmi(null)}
+          onSaved={load}
+          emiId={payEmi.id}
+          amount={Number(payEmi.amount)}
+          installmentLabel={`${payEmi.installment_no}/${payEmi.installments_total}`}
+        />
       )}
       {setupOpen && <EmiSetupModal studentId={studentId} onClose={() => setSetupOpen(false)} onSaved={load} />}
     </div>
