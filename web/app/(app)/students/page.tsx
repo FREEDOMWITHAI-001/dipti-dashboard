@@ -18,6 +18,23 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
     sb.from('emi_schedule').select('amount').eq('status', 'overdue'),
   ]);
 
+  // Build a map of {student_id -> most recent call_log.created_at} for the
+  // students we're about to display. One query, ordered desc, deduped in JS.
+  const studentIds = (students ?? []).map((s: any) => s.id);
+  const lastCallByStudent: Record<string, string> = {};
+  if (studentIds.length > 0) {
+    const { data: calls } = await sb
+      .from('call_logs')
+      .select('student_id, created_at')
+      .in('student_id', studentIds)
+      .order('created_at', { ascending: false });
+    for (const c of (calls ?? []) as any[]) {
+      if (!lastCallByStudent[c.student_id]) {
+        lastCallByStudent[c.student_id] = c.created_at;
+      }
+    }
+  }
+
   const total = count ?? 0;
   const now = Date.now();
   const activeCount   = students?.filter((s: any) => !s.end_date || new Date(s.end_date).getTime() > now).length ?? 0;
@@ -53,7 +70,12 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
         </Link>
       </div>
 
-      <StudentsTable initialStudents={students ?? []} totalCount={total} initialFilter={activeFilter} />
+      <StudentsTable
+        initialStudents={students ?? []}
+        totalCount={total}
+        initialFilter={activeFilter}
+        lastCallByStudent={lastCallByStudent}
+      />
     </div>
   );
 }

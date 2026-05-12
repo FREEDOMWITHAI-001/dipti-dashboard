@@ -17,15 +17,17 @@ type InitialFilter = 'all' | StatusKey;
 const PAGE_SIZE = 10;
 
 export function StudentsTable({
-  initialStudents, totalCount, initialFilter = 'all',
+  initialStudents, totalCount, initialFilter = 'all', lastCallByStudent = {},
 }: {
   initialStudents: Row[];
   totalCount: number;
   initialFilter?: InitialFilter;
+  lastCallByStudent?: Record<string, string>;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const [students, setStudents] = useState(initialStudents);
+  const [lastCalls, setLastCalls] = useState<Record<string, string>>(lastCallByStudent);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [memberships, setMemberships] = useState<Set<string>>(new Set());
@@ -36,15 +38,28 @@ export function StudentsTable({
   const sb = useMemo(() => supabaseBrowser(), []);
 
   useEffect(() => { setStudents(initialStudents); }, [initialStudents]);
+  useEffect(() => { setLastCalls(lastCallByStudent); }, [lastCallByStudent]);
 
   // When the ?filter= param changes (KPI card clicked), sync table state.
   useEffect(() => {
     setStatuses(initialFilter !== 'all' ? new Set([initialFilter]) : new Set());
   }, [initialFilter]);
 
+  // Live-refresh: any change in students OR a new call → re-fetch the page so
+  // the table picks up the latest "last call" date without a manual reload.
   useEffect(() => {
     const ch = sb.channel('students-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        router.refresh();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_logs' }, (payload: any) => {
+        // Optimistic patch: bump the local lastCalls map immediately so the
+        // user sees the new "Last call" date without waiting for a refresh.
+        const sid = payload?.new?.student_id;
+        const at  = payload?.new?.created_at;
+        if (sid && at) {
+          setLastCalls((m) => ({ ...m, [sid]: at }));
+        }
         router.refresh();
       })
       .subscribe();
@@ -153,43 +168,55 @@ export function StudentsTable({
       </div>
 
       <div>
-        {pageRows.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => openStudent(s.id)}
-            className="row-clickable w-full text-left grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
-          >
-            <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
-            <div className="min-w-0">
-              <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
-              <div className="text-[11.5px] text-ink-500 truncate">{s.email}</div>
-            </div>
-            <div className="text-[13px]">
-              <div className="text-ink-900 font-medium">{s.membership ?? '—'}</div>
-              <div className="text-[11px] text-ink-500">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {s.tags?.length
-                ? s.tags.map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700">{t}</span>)
-                : <span className="text-[11px] text-ink-400">—</span>}
-            </div>
-            <div className="text-[12.5px]">
-              <div className="font-medium">{fmtDateShort(s.end_date)}</div>
-              <div className="text-[10.5px] text-ink-500">{
-                (() => {
-                  const d = daysFromNow(s.end_date);
-                  if (d === null) return '—';
-                  if (d < 0) return 'expired';
-                  return `in ${d} d`;
-                })()
-              }</div>
-            </div>
-            <div className="text-[12px] text-ink-500">—</div>
-            <div className="flex items-center justify-end">
-              <StatusPill status={studentStatusFromEnd(s.end_date)} />
-            </div>
-          </button>
-        ))}
+        {pageRows.map((s) => {
+          const lastCallAt = lastCalls[s.id];
+          return (
+            <button
+              key={s.id}
+              onClick={() => openStudent(s.id)}
+              className="row-clickable w-full text-left grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
+            >
+              <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
+              <div className="min-w-0">
+                <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
+                <div className="text-[11.5px] text-ink-500 truncate">{s.email}</div>
+              </div>
+              <div className="text-[13px]">
+                <div className="text-ink-900 font-medium">{s.membership ?? '—'}</div>
+                <div className="text-[11px] text-ink-500">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {s.tags?.length
+                  ? s.tags.map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700">{t}</span>)
+                  : <span className="text-[11px] text-ink-400">—</span>}
+              </div>
+              <div className="text-[12.5px]">
+                <div className="font-medium">{fmtDateShort(s.end_date)}</div>
+                <div className="text-[10.5px] text-ink-500">{
+                  (() => {
+                    const d = daysFromNow(s.end_date);
+                    if (d === null) return '—';
+                    if (d < 0) return 'expired';
+                    return `in ${d} d`;
+                  })()
+                }</div>
+              </div>
+              <div className="text-[12.5px]">
+                {lastCallAt ? (
+                  <>
+                    <div className="font-medium text-ink-800">{fmtDateShort(lastCallAt)}</div>
+                    <div className="text-[10.5px] text-ink-500">{relativeFromNow(lastCallAt)}</div>
+                  </>
+                ) : (
+                  <span className="text-ink-400">—</span>
+                )}
+              </div>
+              <div className="flex items-center justify-end">
+                <StatusPill status={studentStatusFromEnd(s.end_date)} />
+              </div>
+            </button>
+          );
+        })}
         {pageRows.length === 0 && (
           <div className="px-6 py-12 text-center text-[13px] text-ink-500">
             {filtered.length === 0 ? 'No students match your filters.' : 'No students on this page.'}
@@ -230,6 +257,18 @@ export function StudentsTable({
       </div>
     </div>
   );
+}
+
+// "in 3 d" / "2 d ago" / "today" — short relative-time string.
+function relativeFromNow(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const days = Math.round((t - Date.now()) / 86400000);
+  if (days === 0) return 'today';
+  if (days === -1) return 'yesterday';
+  if (days < 0) return `${-days} d ago`;
+  if (days === 1) return 'tomorrow';
+  return `in ${days} d`;
 }
 
 function pageNumbers(current: number, total: number): Array<number | '…'> {
