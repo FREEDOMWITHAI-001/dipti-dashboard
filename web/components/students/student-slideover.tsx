@@ -1,5 +1,5 @@
 'use client';
-
+ 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, X, Mail, Phone, MessageSquarePlus, Send, CheckCheck } from 'lucide-react';
@@ -11,13 +11,14 @@ import { ProfileTab } from './profile-tab';
 import { ProgressTab } from './progress-tab';
 import { CallsTab } from './calls-tab';
 import { PaymentsTab } from './payments-tab';
+import { ProgressAiTab } from './progress-ai-tab';
 import { TagEditor } from './tag-editor';
 import { ReminderModal } from '@/components/reminders/reminder-modal';
 import type { Database } from '@/types/database';
-
+ 
 type Student = Database['public']['Tables']['students']['Row'];
-type Tab = 'profile' | 'progress' | 'calls' | 'payments';
-
+type Tab = 'profile' | 'progress' | 'calls' | 'payments' | 'ai';
+ 
 export function StudentSlideover() {
   const params = useSearchParams();
   const router = useRouter();
@@ -28,7 +29,7 @@ export function StudentSlideover() {
   const [callsCount, setCallsCount] = useState(0);
   const [reminderOpen, setReminderOpen] = useState(false);
   const sb = useMemo(() => supabaseBrowser(), []);
-
+ 
   useEffect(() => {
     if (id) {
       setOpen(true);
@@ -37,7 +38,7 @@ export function StudentSlideover() {
       setOpen(false);
     }
   }, [id]);
-
+ 
   useEffect(() => {
     if (!id) { setStudent(null); return; }
     let cancel = false;
@@ -50,12 +51,12 @@ export function StudentSlideover() {
     })();
     return () => { cancel = true; };
   }, [id, sb]);
-
+ 
   // Realtime: if this student row changes elsewhere (e.g. another coach
   // ticks a checkpoint), reflect it here.
   useEffect(() => {
     if (!id) return;
-    const ch = sb.channel(`student:${id}`)
+    const ch = sb.channel(`student-slideover:${id}`)
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'students', filter: `id=eq.${id}` },
         (payload) => setStudent((cur) => (cur ? { ...cur, ...(payload.new as any) } : cur))
@@ -67,18 +68,18 @@ export function StudentSlideover() {
       .subscribe();
     return () => { sb.removeChannel(ch); };
   }, [id, sb]);
-
+ 
   function close() {
     const p = new URLSearchParams(params.toString());
     p.delete('student');
     router.push(p.toString() ? `?${p.toString()}` as any : '?' as any, { scroll: false });
   }
-
+ 
   // Child-driven patch (Progress + Profile tabs call this for optimistic updates).
   function patchStudent(patch: Partial<Student>) {
     setStudent((cur) => (cur ? { ...cur, ...patch } : cur));
   }
-
+ 
   return (
     <>
       <div className={cn('fixed inset-0 z-40', open ? 'pointer-events-auto' : 'pointer-events-none')}>
@@ -106,7 +107,7 @@ export function StudentSlideover() {
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-
+ 
                 <div className="flex items-start gap-4">
                   <StudentAvatar first={student.first_name} last={student.last_name} size={56} />
                   <div className="flex-1 min-w-0">
@@ -132,24 +133,26 @@ export function StudentSlideover() {
                   </div>
                 </div>
               </header>
-
+ 
               <nav className="px-5 border-b border-ink-100 flex gap-1 overflow-x-auto no-scrollbar">
                 <TabBtn t="profile"  label="Profile"  active={tab} onClick={setTab} />
                 <TabBtn t="progress" label="Progress" active={tab} onClick={setTab}
                   badge={`${[student.month_1, student.month_2, student.month_3, student.month_4, student.month_5, student.month_6].filter(Boolean).length}/6`} />
                 <TabBtn t="calls"    label="Calls"    active={tab} onClick={setTab} badge={String(callsCount)} />
                 <TabBtn t="payments" label="Payments" active={tab} onClick={setTab} />
+                <TabBtn t="ai"       label="AI Summary" active={tab} onClick={setTab} />
               </nav>
-
+ 
               <div className="flex-1 overflow-auto">
                 <div className="px-7 py-6">
                   {tab === 'profile' && <ProfileTab student={student} />}
                   {tab === 'progress' && <ProgressTab student={student} onChange={patchStudent} />}
                   {tab === 'calls' && <CallsTab studentId={student.id} />}
                   {tab === 'payments' && <PaymentsTab studentId={student.id} />}
+                  {tab === 'ai' && <ProgressAiTab studentId={student.id} />}
                 </div>
               </div>
-
+ 
               <div className="px-5 py-3 border-t border-ink-100 bg-white flex items-center gap-2">
                 <button onClick={() => setTab('calls')} className="h-9 px-3 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50 flex items-center gap-1.5">
                   <MessageSquarePlus className="w-4 h-4" /> Log a call
@@ -167,7 +170,7 @@ export function StudentSlideover() {
           ) : null}
         </aside>
       </div>
-
+ 
       {student && (
         <ReminderModal
           open={reminderOpen}
@@ -178,7 +181,7 @@ export function StudentSlideover() {
     </>
   );
 }
-
+ 
 function TabBtn({ t, label, badge, active, onClick }: { t: Tab; label: string; badge?: string; active: Tab; onClick: (t: Tab) => void }) {
   const isActive = active === t;
   return (

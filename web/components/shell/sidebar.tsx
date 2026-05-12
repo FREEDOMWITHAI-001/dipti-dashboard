@@ -1,34 +1,36 @@
-'use client';
 
+'use client';
+ 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   UsersRound, IndianRupee, BellRing, Phone, LineChart, Settings2, Link2,
-  ChevronUp,
+  ChevronUp, MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
+ 
 type SessionUser = {
   email: string;
   displayName: string;
   initials: string;
   role: 'coach' | 'admin';
 } | null;
-
+ 
 type Badges = { emi: number; calls: number };
-
+ 
 const NAV: Array<{ href: string; label: string; icon: any; badgeKey?: keyof Badges; tone?: 'risk' | 'muted' }> = [
   { href: '/students',  label: 'Students',     icon: UsersRound },
   { href: '/emi',       label: 'EMI Tracker',  icon: IndianRupee, badgeKey: 'emi',   tone: 'risk' },
   { href: '/reminders', label: 'Reminders',    icon: BellRing },
   { href: '/calls',     label: 'Call Queue',   icon: Phone,       badgeKey: 'calls', tone: 'muted' },
+  { href: '/comments',  label: 'Comments',     icon: MessageSquare },
   { href: '/reports',   label: 'Reports',      icon: LineChart },
 ];
-
+ 
 export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges }) {
   const pathname = usePathname();
   const avatarClass = avClassForInitials(user?.initials ?? '');
-
+ 
   return (
     <aside className="w-[244px] shrink-0 bg-white border-r border-ink-200/70 flex flex-col">
       <div className="h-16 px-5 flex items-center gap-3 border-b border-ink-200/70">
@@ -38,7 +40,7 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
           <div className="text-[11px] text-ink-500 -mt-0.5">Diamond program</div>
         </div>
       </div>
-
+ 
       <nav className="px-3 py-3 flex-1 space-y-0.5 text-[13.5px]">
         {NAV.map(({ href, label, icon: Icon, badgeKey, tone }) => {
           const active = pathname === href || pathname?.startsWith(href + '/');
@@ -64,7 +66,7 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
             </Link>
           );
         })}
-
+ 
         <div className="pt-4 pb-1.5 px-3 text-[10.5px] uppercase tracking-wider text-ink-400 font-semibold">
           Workspace
         </div>
@@ -84,7 +86,7 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
           </span>
         </Link>
       </nav>
-
+ 
       <Link
         href={'/settings' as any}
         className="m-3 px-3 py-2.5 rounded-xl bg-ink-50/70 hover:bg-ink-100 border border-ink-200/60 flex items-center gap-3 text-left transition group"
@@ -108,7 +110,7 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
     </aside>
   );
 }
-
+ 
 const PRESETS = ['av-AK', 'av-DV', 'av-FM', 'av-S'];
 function avClassForInitials(initials: string): string {
   if (!initials) return 'bg-ink-900 text-white';

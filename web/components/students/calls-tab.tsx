@@ -1,7 +1,7 @@
 'use client';
-
+ 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CornerDownLeft, CalendarPlus } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, CalendarPlus, X } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { CoachAvatar } from '@/components/ui/avatar';
@@ -9,9 +9,23 @@ import { fmtDate, cn } from '@/lib/utils';
 import { BriefingCard } from './briefing-card';
 import { VoiceButton } from './voice-button';
 import type { Database } from '@/types/database';
-
+ 
 type Call = Database['public']['Tables']['call_logs']['Row'] & { coach?: { display_name: string; initials: string } };
-
+ 
+// Helper: yyyy-mm-dd from a Date, in local time.
+function ymd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+ 
+function presetDate(daysFromNow: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  return ymd(d);
+}
+ 
 export function CallsTab({ studentId }: { studentId: string }) {
   const sb = useMemo(() => supabaseBrowser(), []);
   const { toast } = useToast();
@@ -20,7 +34,12 @@ export function CallsTab({ studentId }: { studentId: string }) {
   const [outcome, setOutcome] = useState<Call['outcome']>(null);
   const [saving, setSaving] = useState(false);
   const [presence, setPresence] = useState<string[]>([]);
-
+ 
+  // Next-action picker state
+  const [nextOpen, setNextOpen] = useState(false);
+  const [nextAction, setNextAction] = useState('');
+  const [nextDue, setNextDue] = useState('');
+ 
   // load calls
   useEffect(() => {
     let cancel = false;
@@ -34,53 +53,90 @@ export function CallsTab({ studentId }: { studentId: string }) {
     })();
     return () => { cancel = true; };
   }, [studentId, sb]);
-
+ 
   // realtime + presence
   useEffect(() => {
-    const ch = sb.channel(`student:${studentId}`, { config: { presence: { key: studentId } } });
-
-    ch.on('postgres_changes',
+    // Defensive: tear down any stale channel with this topic
+    // (handles React Strict Mode double-mount and dev hot-reload)
+    const topic = `realtime:student:${studentId}`;
+    sb.getChannels().forEach((c) => {
+      if (c.topic === topic) sb.removeChannel(c);
+    });
+ 
+    // Chain .on() → .subscribe() synchronously. No async work between
+    // creating the channel and subscribing, or Supabase will throw
+    // "cannot add postgres_changes callbacks ... after subscribe()".
+    const ch = sb
+      .channel(`student:${studentId}`, { config: { presence: { key: studentId } } })
+      .on(
+        'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'call_logs', filter: `student_id=eq.${studentId}` },
         async () => {
-          const { data } = await sb.from('call_logs').select('*, coach:profiles(display_name, initials)').eq('student_id', studentId).order('created_at', { ascending: false });
+          const { data } = await sb
+            .from('call_logs')
+            .select('*, coach:profiles(display_name, initials)')
+            .eq('student_id', studentId)
+            .order('created_at', { ascending: false });
           setCalls((data ?? []) as Call[]);
-        });
-
-    ch.on('presence', { event: 'sync' }, () => {
-      const state = ch.presenceState();
-      const initials = Object.values(state).flat().map((p: any) => p.initials).filter(Boolean);
-      setPresence(initials);
-    });
-
-    (async () => {
-      const { data: { user } } = await sb.auth.getUser();
-      if (user) {
+        }
+      )
+      .on('presence', { event: 'sync' }, () => {
+        const state = ch.presenceState();
+        const initials = Object.values(state).flat().map((p: any) => p.initials).filter(Boolean);
+        setPresence(initials);
+      })
+      .subscribe(async (status) => {
+        if (status !== 'SUBSCRIBED') return;
+        const { data: { user } } = await sb.auth.getUser();
+        if (!user) return;
         const { data: prof } = await sb.from('profiles').select('initials').eq('id', user.id).maybeSingle();
-        await ch.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') await ch.track({ initials: prof?.initials ?? 'U', ts: Date.now() });
-        });
-      } else {
-        await ch.subscribe();
-      }
-    })();
-
+        await ch.track({ initials: prof?.initials ?? 'U', ts: Date.now() });
+      });
+ 
     return () => { sb.removeChannel(ch); };
   }, [studentId, sb]);
-
+ 
   async function save() {
     if (!comment.trim()) return;
     setSaving(true);
     const { data: { user } } = await sb.auth.getUser();
     if (!user) { toast('Not signed in', 'error'); setSaving(false); return; }
     const { error } = await sb.from('call_logs').insert({
-      student_id: studentId, coach_id: user.id, comment, outcome: outcome ?? null,
+      student_id: studentId,
+      coach_id: user.id,
+      comment,
+      outcome: outcome ?? null,
+      next_action: nextAction.trim() || null,
+      next_action_due: nextDue || null,
     });
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
-    setComment(''); setOutcome(null);
+    // Reset composer including next-action picker
+    setComment('');
+    setOutcome(null);
+    setNextAction('');
+    setNextDue('');
+    setNextOpen(false);
     toast('Call logged', 'success');
   }
-
+ 
+  // Label that summarises what's set in the next-action picker
+  const nextLabel = (() => {
+    if (!nextAction && !nextDue) return 'Next action';
+    if (nextAction && nextDue) {
+      const today = ymd(new Date());
+      const tomorrow = presetDate(1);
+      const shortDate =
+        nextDue === today ? 'Today'
+        : nextDue === tomorrow ? 'Tomorrow'
+        : nextDue;
+      return `${nextAction.length > 24 ? nextAction.slice(0, 22) + '…' : nextAction} · ${shortDate}`;
+    }
+    return nextAction || nextDue;
+  })();
+ 
+  const nextIsSet = !!(nextAction || nextDue);
+ 
   return (
     <div>
       {presence.length > 1 && (
@@ -89,9 +145,9 @@ export function CallsTab({ studentId }: { studentId: string }) {
           {presence.filter((i, idx, arr) => arr.indexOf(i) === idx).join(', ')} viewing
         </div>
       )}
-
+ 
       <BriefingCard studentId={studentId} callsCount={calls.length} />
-
+ 
       <div className="bg-white border border-ink-200/70 rounded-2xl p-5 mb-6">
         <div className="text-[12px] uppercase tracking-wider font-semibold text-ink-500 mb-2.5">Log a call</div>
         <textarea
@@ -111,13 +167,22 @@ export function CallsTab({ studentId }: { studentId: string }) {
             <option value="rescheduled">Rescheduled</option>
             <option value="wrong_number">Wrong number</option>
           </select>
+ 
           <button
             type="button"
-            onClick={() => toast('Inline next-action picker coming soon — for now, mention the follow-up date in the call note.', 'info')}
-            className="h-8 px-2.5 rounded-md border border-ink-200 text-[12px] font-medium hover:bg-ink-50 flex items-center gap-1"
+            onClick={() => setNextOpen((o) => !o)}
+            className={cn(
+              'h-8 px-2.5 rounded-md border text-[12px] font-medium flex items-center gap-1 max-w-[260px] truncate',
+              nextIsSet
+                ? 'border-accent-200 bg-accent-50 text-accent-700 hover:bg-accent-100'
+                : 'border-ink-200 hover:bg-ink-50'
+            )}
+            title={nextIsSet ? `${nextAction || '(no description)'} · ${nextDue || '(no date)'}` : 'Set a follow-up'}
           >
-            <CalendarPlus className="w-3.5 h-3.5" /> Next action
+            <CalendarPlus className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{nextLabel}</span>
           </button>
+ 
           <VoiceButton onTranscript={(text) => setComment((c) => (c ? c + '\n\n' : '') + text)} />
           <button
             disabled={saving || !comment.trim()} onClick={save}
@@ -126,8 +191,66 @@ export function CallsTab({ studentId }: { studentId: string }) {
             {saving ? 'Saving…' : <>Save call <CornerDownLeft className="w-3.5 h-3.5" /></>}
           </button>
         </div>
+ 
+        {/* Inline next-action picker */}
+        {nextOpen && (
+          <div className="mt-3 pt-3 border-t border-ink-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-ink-500">
+                Next action
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setNextAction('');
+                  setNextDue('');
+                  setNextOpen(false);
+                }}
+                className="text-[11px] text-ink-500 hover:text-ink-800 flex items-center gap-1"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            </div>
+ 
+            <input
+              type="text"
+              value={nextAction}
+              onChange={(e) => setNextAction(e.target.value)}
+              placeholder="e.g. Follow up on EMI 3 payment"
+              className="w-full h-9 px-3 rounded-md border border-ink-200 text-[13px] focus:border-accent-400 focus:ring-2 focus:ring-accent-100 outline-none"
+            />
+ 
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11.5px] text-ink-500">Due</span>
+              <input
+                type="date"
+                value={nextDue}
+                onChange={(e) => setNextDue(e.target.value)}
+                min={ymd(new Date())}
+                className="h-8 px-2 rounded-md border border-ink-200 text-[12px] bg-white"
+              />
+              <span className="text-ink-300 text-[12px]">·</span>
+              <button type="button" onClick={() => setNextDue(presetDate(1))}
+                className="h-7 px-2 rounded-md border border-ink-200 text-[11.5px] hover:bg-ink-50">
+                Tomorrow
+              </button>
+              <button type="button" onClick={() => setNextDue(presetDate(3))}
+                className="h-7 px-2 rounded-md border border-ink-200 text-[11.5px] hover:bg-ink-50">
+                In 3 days
+              </button>
+              <button type="button" onClick={() => setNextDue(presetDate(7))}
+                className="h-7 px-2 rounded-md border border-ink-200 text-[11.5px] hover:bg-ink-50">
+                Next week
+              </button>
+            </div>
+ 
+            <p className="text-[11px] text-ink-400">
+              Saved together with this call when you click <span className="font-medium text-ink-600">Save call</span>.
+            </p>
+          </div>
+        )}
       </div>
-
+ 
       <div className="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 mb-3">
         Timeline · {calls.length}
       </div>
@@ -160,7 +283,11 @@ export function CallsTab({ studentId }: { studentId: string }) {
               <div className="text-[13px] leading-relaxed text-ink-800 whitespace-pre-wrap">{c.comment}</div>
               {c.next_action && (
                 <div className="mt-3 inline-flex items-center gap-1.5 text-[11.5px] font-medium text-ink-700 bg-ink-50 px-2 py-1 rounded-md">
-                  <ArrowRight className="w-3 h-3" /> {c.next_action}
+                  <ArrowRight className="w-3 h-3" />
+                  {c.next_action}
+                  {c.next_action_due && (
+                    <span className="text-ink-500 font-normal">· due {c.next_action_due}</span>
+                  )}
                 </div>
               )}
             </div>

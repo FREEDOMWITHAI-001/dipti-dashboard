@@ -46,12 +46,15 @@ function LoginInner() {
   return (
     <div className="min-h-screen grid place-items-center bg-ink-50 px-4">
       <div className="w-full max-w-[380px] bg-white border border-ink-200/70 rounded-2xl shadow-pop p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-9 h-9 rounded-lg bg-ink-900 text-white grid place-items-center font-semibold">D</div>
-          <div>
-            <div className="font-semibold">DVA Operations</div>
-            <div className="text-[12px] text-ink-500">Sign in to continue</div>
-          </div>
+        <div className="flex flex-col items-center text-center mb-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/dva-logo.png"
+            alt="DVA"
+            className="w-20 h-20 rounded-full shadow-sm ring-1 ring-ink-200/60 object-cover"
+          />
+          <div className="mt-3 font-semibold text-[15px]">DVA Operations</div>
+          <div className="text-[12px] text-ink-500">Sign in to continue</div>
         </div>
 
         {banner && (
@@ -85,7 +88,7 @@ function LoginInner() {
           </Button>
         </form>
 
-        <div className="mt-6 pt-5 border-t border-ink-100 text-[11.5px] text-ink-500 leading-relaxed">
+        <div className="mt-6 pt-5 border-t border-ink-100 text-[11.5px] text-ink-500 leading-relaxed text-center">
           For first-time setup, an admin invites you via Supabase Auth.
           Coaches use the same login they use in GHL.
         </div>
