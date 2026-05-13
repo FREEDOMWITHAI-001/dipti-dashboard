@@ -33,6 +33,22 @@ type Emi = {
   status: string; paid_date: string | null;
 };
 
+type Provider = 'openai' | 'anthropic' | 'google' | 'groq' | 'openrouter';
+
+// Model + endpoint config per provider. Keep models cheap/fast — these
+// summaries are short and we run them frequently.
+const PROVIDER_CFG: Record<Provider, {
+  endpoint: string;
+  model: string;
+  label: string;
+}> = {
+  openai:     { endpoint: 'https://api.openai.com/v1/chat/completions',                 model: 'gpt-4o-mini',                       label: 'OpenAI GPT-4o-mini' },
+  anthropic:  { endpoint: '',                                                            model: 'claude-haiku-4-5-20251001',         label: 'Claude Haiku 4.5' },
+  google:     { endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',    model: 'gemini-1.5-flash',                  label: 'Gemini 1.5 Flash' },
+  groq:       { endpoint: 'https://api.groq.com/openai/v1/chat/completions',            model: 'llama-3.1-70b-versatile',           label: 'Groq Llama 3.1 70B' },
+  openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions',              model: 'openai/gpt-4o-mini',                label: 'OpenRouter (GPT-4o-mini)' },
+};
+
 function buildContext(student: Student, calls: Call[], emi: Emi[]): string {
   const progress = [
     student.month_1, student.month_2, student.month_3,
@@ -60,17 +76,85 @@ function buildContext(student: Student, calls: Call[], emi: Emi[]): string {
   ].join('\n');
 }
 
+// ---- Provider-specific call functions ----
+
+async function callOpenAICompatible(
+  endpoint: string, model: string, apiKey: string, system: string, user: string,
+  extraHeaders: Record<string, string> = {}
+): Promise<{ text: string; in: number; out: number; model: string }> {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      ...extraHeaders,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 600,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user',   content: user },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`${endpoint.split('/')[2]} returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const text  = data?.choices?.[0]?.message?.content ?? '';
+  const inTok  = data?.usage?.prompt_tokens     ?? 0;
+  const outTok = data?.usage?.completion_tokens ?? 0;
+  return { text, in: inTok, out: outTok, model: data?.model ?? model };
+}
+
+async function callAnthropic(
+  apiKey: string, model: string, system: string, user: string
+): Promise<{ text: string; in: number; out: number; model: string }> {
+  const client = new Anthropic({ apiKey });
+  const msg = await client.messages.create({
+    model, max_tokens: 600, system,
+    messages: [{ role: 'user', content: user }],
+  });
+  const text = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
+  return { text, in: msg.usage.input_tokens, out: msg.usage.output_tokens, model: msg.model };
+}
+
+async function callGoogle(
+  apiKey: string, model: string, system: string, user: string
+): Promise<{ text: string; in: number; out: number; model: string }> {
+  // Google's REST format is different: system instruction + contents array
+  const url = `${PROVIDER_CFG.google.endpoint}/${model}:generateContent?key=${apiKey}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { maxOutputTokens: 600 },
+    }),
+  });
+  if (!res.ok) throw new Error(`Google returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const inTok  = data?.usageMetadata?.promptTokenCount     ?? 0;
+  const outTok = data?.usageMetadata?.candidatesTokenCount ?? 0;
+  return { text, in: inTok, out: outTok, model };
+}
+
 export async function generateBriefing(input: {
   student: Student; calls: Call[]; emi: Emi[];
 }): Promise<{ summary_md: string; model: string; tokens_in: number; tokens_out: number }> {
-  const { anthropic } = await getRuntimeSettings();
+  const { aiProvider, aiApiKey, anthropic } = await getRuntimeSettings();
 
-  if (!anthropic) {
-    // Graceful degradation when no key configured.
+  // Pick effective provider + key. Falls back to legacy anthropic_api_key
+  // column if ai_api_key isn't set yet (eases migration).
+  const provider: Provider = (aiProvider as Provider) || 'anthropic';
+  const effectiveKey = aiApiKey || (provider === 'anthropic' ? anthropic : undefined);
+
+  if (!effectiveKey) {
     return {
       summary_md: [
         '## Story',
-        '_AI briefing is unavailable — set `ANTHROPIC_API_KEY` (or save it in Settings) to enable._',
+        `_AI briefing is unavailable — save an API key for **${PROVIDER_CFG[provider].label}** in Settings to enable._`,
         '',
         '## Ongoing threads',
         input.calls.length === 0
@@ -81,19 +165,45 @@ export async function generateBriefing(input: {
     };
   }
 
-  const client = new Anthropic({ apiKey: anthropic });
-  const msg = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 600,
-    system: BRIEFING_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: buildContext(input.student, input.calls, input.emi) }],
-  });
+  const cfg = PROVIDER_CFG[provider];
+  const context = buildContext(input.student, input.calls, input.emi);
 
-  const summary = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
-  return {
-    summary_md: summary,
-    model: msg.model,
-    tokens_in: msg.usage.input_tokens,
-    tokens_out: msg.usage.output_tokens,
-  };
+  try {
+    let result;
+    switch (provider) {
+      case 'anthropic':
+        result = await callAnthropic(effectiveKey, cfg.model, BRIEFING_SYSTEM_PROMPT, context);
+        break;
+      case 'google':
+        result = await callGoogle(effectiveKey, cfg.model, BRIEFING_SYSTEM_PROMPT, context);
+        break;
+      case 'openrouter':
+        result = await callOpenAICompatible(cfg.endpoint, cfg.model, effectiveKey, BRIEFING_SYSTEM_PROMPT, context, {
+          'HTTP-Referer': 'https://dipti-dashboard.vercel.app',
+          'X-Title': 'DVA Operations Dashboard',
+        });
+        break;
+      case 'openai':
+      case 'groq':
+      default:
+        result = await callOpenAICompatible(cfg.endpoint, cfg.model, effectiveKey, BRIEFING_SYSTEM_PROMPT, context);
+        break;
+    }
+    return {
+      summary_md: result.text,
+      model: result.model,
+      tokens_in: result.in,
+      tokens_out: result.out,
+    };
+  } catch (e: any) {
+    return {
+      summary_md: [
+        '## Story',
+        `_AI briefing failed: ${(e?.message ?? 'unknown error').slice(0, 200)}_`,
+        '',
+        '_Check your API key in Settings, or try a different provider._',
+      ].join('\n'),
+      model: `${provider}:error`, tokens_in: 0, tokens_out: 0,
+    };
+  }
 }

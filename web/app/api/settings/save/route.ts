@@ -3,10 +3,12 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
 // POST /api/settings/save
-// body: { ghl_location_id?, ghl_pit_token?, openai_api_key?, anthropic_api_key? }
-// Empty strings are ignored (so blank fields preserve existing values).
+// body: { ghl_location_id?, ghl_pit_token?, openai_api_key?, anthropic_api_key?, ai_provider?, ai_api_key? }
+// Empty strings are ignored so blank fields preserve existing values.
 // Admin role required (also enforced by RLS on ghl_settings).
 export const runtime = 'nodejs';
+
+const VALID_PROVIDERS = new Set(['openai', 'anthropic', 'google', 'groq', 'openrouter']);
 
 export async function POST(req: Request) {
   const sb = supabaseServer();
@@ -28,6 +30,8 @@ export async function POST(req: Request) {
     ghl_pit_token?: string;
     openai_api_key?: string;
     anthropic_api_key?: string;
+    ai_provider?: string;
+    ai_api_key?: string;
   };
 
   const patch: Record<string, string> = {};
@@ -35,6 +39,10 @@ export async function POST(req: Request) {
   if (body.ghl_pit_token?.trim())     patch.ghl_pit_token     = body.ghl_pit_token.trim();
   if (body.openai_api_key?.trim())    patch.openai_api_key    = body.openai_api_key.trim();
   if (body.anthropic_api_key?.trim()) patch.anthropic_api_key = body.anthropic_api_key.trim();
+  if (body.ai_provider?.trim() && VALID_PROVIDERS.has(body.ai_provider.trim())) {
+    patch.ai_provider = body.ai_provider.trim();
+  }
+  if (body.ai_api_key?.trim())        patch.ai_api_key        = body.ai_api_key.trim();
 
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: true, updated: 0 });

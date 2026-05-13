@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Pencil, Mic } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fmtDate } from '@/lib/utils';
 import { VoiceButton } from './voice-button';
@@ -14,12 +14,36 @@ export function ProfileTab({ student }: { student: Student }) {
   const sb = supabaseBrowser();
   const { toast } = useToast();
   const [bg, setBg] = useState(student.background ?? '');
+  const [savedBg, setSavedBg] = useState(student.background ?? '');
   const [editing, setEditing] = useState(false);
 
+  // Only re-sync from prop when we navigate to a *different* student.
+  // We intentionally ignore changes to `student.background` on the same
+  // student because:
+  //   1. After we save, we already update savedBg ourselves
+  //   2. The slideover's realtime subscription may refetch with stale data,
+  //      racing our save and wiping out the freshly-saved text
+  const lastStudentId = useRef<string>(student.id);
+  useEffect(() => {
+    if (lastStudentId.current !== student.id) {
+      setBg(student.background ?? '');
+      setSavedBg(student.background ?? '');
+      setEditing(false);
+      lastStudentId.current = student.id;
+    }
+  }, [student.id, student.background]);
+
   async function save() {
-    const { error } = await sb.from('students').update({ background: bg }).eq('id', student.id);
+    const newValue = bg; // snapshot before the async call
+    const { error } = await sb.from('students').update({ background: newValue }).eq('id', student.id);
     if (error) { toast(error.message, 'error'); return; }
+    setSavedBg(newValue);
+    setEditing(false);
     toast('Saved', 'success');
+  }
+
+  function cancel() {
+    setBg(savedBg);
     setEditing(false);
   }
 
@@ -49,18 +73,19 @@ export function ProfileTab({ student }: { student: Student }) {
               value={bg} onChange={(e) => setBg(e.target.value)}
               rows={4}
               className="w-full text-[13.5px] leading-relaxed outline-none resize-none placeholder:text-ink-400"
-              placeholder="What's the student's story?"
+              placeholder="What's the student's story? Personality, key context, things to remember…"
+              autoFocus
             />
           ) : (
-            <div className="text-[13.5px] leading-relaxed text-ink-800 min-h-[1.5em]">
-              {student.background || <span className="text-ink-400">No background recorded yet.</span>}
+            <div className="text-[13.5px] leading-relaxed text-ink-800 min-h-[1.5em] whitespace-pre-line">
+              {savedBg || <span className="text-ink-400">No background recorded yet.</span>}
             </div>
           )}
           <div className="mt-3 pt-3 border-t border-ink-100 flex items-center gap-2">
             {editing ? (
               <>
                 <button onClick={save} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium btn-primary">Save</button>
-                <button onClick={() => { setBg(student.background ?? ''); setEditing(false); }} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50">Cancel</button>
+                <button onClick={cancel} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50">Cancel</button>
               </>
             ) : (
               <button onClick={() => setEditing(true)} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
