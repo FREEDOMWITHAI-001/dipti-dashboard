@@ -15,6 +15,7 @@ type StatusKey = 'active' | 'expiring' | 'expired';
 type InitialFilter = 'all' | StatusKey;
 
 const PAGE_SIZE = 10;
+const TAG_DISPLAY_LIMIT = 3;
 
 export function StudentsTable({
   initialStudents, totalCount, initialFilter = 'all',
@@ -37,7 +38,6 @@ export function StudentsTable({
 
   useEffect(() => { setStudents(initialStudents); }, [initialStudents]);
 
-  // When the ?filter= param changes (KPI card clicked), sync table state.
   useEffect(() => {
     setStatuses(initialFilter !== 'all' ? new Set([initialFilter]) : new Set());
   }, [initialFilter]);
@@ -51,7 +51,9 @@ export function StudentsTable({
     return () => { sb.removeChannel(ch); };
   }, [sb, router]);
 
-  const allMemberships = useMemo(() => Array.from(new Set(students.map((s) => s.membership).filter(Boolean) as string[])).sort(), [students]);
+  const allMemberships = useMemo(() =>
+    Array.from(new Set(students.map((s) => s.membership).filter(Boolean) as string[])).sort(),
+    [students]);
   const allTags = useMemo(() => {
     const set = new Set<string>();
     students.forEach((s) => s.tags?.forEach((t) => set.add(t)));
@@ -87,7 +89,6 @@ export function StudentsTable({
     router.push(`?${p.toString()}` as any, { scroll: false });
   }
 
-  // Active filter banner (only shown when a KPI filter is set)
   const filterBanner =
     statuses.size === 1
       ? (statuses.has('active') ? 'Active students'
@@ -153,54 +154,59 @@ export function StudentsTable({
       </div>
 
       <div>
-        {pageRows.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => openStudent(s.id)}
-            className="row-clickable w-full text-left grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
-          >
-            <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
-            <div className="min-w-0">
-              <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
-              <div className="text-[11.5px] text-ink-500 truncate">{s.email}</div>
-            </div>
-            <div className="text-[13px]">
-              <div className="text-ink-900 font-medium">{s.membership ?? '—'}</div>
-              <div className="text-[11px] text-ink-500">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
-            </div>
-            <div className="flex flex-wrap gap-1 items-center">
-              {s.tags?.length ? (
-                <>
-                  {s.tags.slice(0, 3).map((t) => (
-                    <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700">{t}</span>
-                  ))}
-                  {s.tags.length > 3 && (
-                    <span className="text-[10px] text-ink-500" title={s.tags.slice(3).join(', ')}>
-                      +{s.tags.length - 3}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className="text-[11px] text-ink-400">—</span>
-              )}
-            </div>
-            <div className="text-[12.5px]">
-              <div className="font-medium">{fmtDateShort(s.end_date)}</div>
-              <div className="text-[10.5px] text-ink-500">{
-                (() => {
-                  const d = daysFromNow(s.end_date);
-                  if (d === null) return '—';
-                  if (d < 0) return 'expired';
-                  return `in ${d} d`;
-                })()
-              }</div>
-            </div>
-            <div className="text-[12px] text-ink-500">—</div>
-            <div className="flex items-center justify-end">
-              <StatusPill status={studentStatusFromEnd(s.end_date)} />
-            </div>
-          </button>
-        ))}
+        {pageRows.map((s) => {
+          const totalTags = s.tags?.length ?? 0;
+          const visibleTags = (s.tags ?? []).slice(0, TAG_DISPLAY_LIMIT);
+          const overflowCount = Math.max(0, totalTags - TAG_DISPLAY_LIMIT);
+          const overflowTagsTitle = (s.tags ?? []).slice(TAG_DISPLAY_LIMIT).join(', ');
+
+          return (
+            <button
+              key={s.id}
+              onClick={() => openStudent(s.id)}
+              className="row-clickable w-full text-left grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
+            >
+              <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
+              <div className="min-w-0">
+                <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
+                <div className="text-[11.5px] text-ink-500 truncate">{s.email}</div>
+              </div>
+              <div className="text-[13px]">
+                <div className="text-ink-900 font-medium">{s.membership ?? '—'}</div>
+                <div className="text-[11px] text-ink-500">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
+              </div>
+              <div className="flex flex-wrap gap-1 items-center min-w-0">
+                {totalTags === 0 && <span className="text-[11px] text-ink-400">—</span>}
+                {visibleTags.map((t) => (
+                  <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 whitespace-nowrap">{t}</span>
+                ))}
+                {overflowCount > 0 && (
+                  <span
+                    className="text-[10px] text-ink-500 px-1 cursor-help whitespace-nowrap"
+                    title={overflowTagsTitle}
+                  >
+                    +{overflowCount}
+                  </span>
+                )}
+              </div>
+              <div className="text-[12.5px]">
+                <div className="font-medium">{fmtDateShort(s.end_date)}</div>
+                <div className="text-[10.5px] text-ink-500">{
+                  (() => {
+                    const d = daysFromNow(s.end_date);
+                    if (d === null) return '—';
+                    if (d < 0) return 'expired';
+                    return `in ${d} d`;
+                  })()
+                }</div>
+              </div>
+              <div className="text-[12px] text-ink-500">—</div>
+              <div className="flex items-center justify-end">
+                <StatusPill status={studentStatusFromEnd(s.end_date)} />
+              </div>
+            </button>
+          );
+        })}
         {pageRows.length === 0 && (
           <div className="px-6 py-12 text-center text-[13px] text-ink-500">
             {filtered.length === 0 ? 'No students match your filters.' : 'No students on this page.'}
