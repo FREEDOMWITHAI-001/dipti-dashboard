@@ -23,24 +23,20 @@ export function ProfileTab({ student }: { student: Student }) {
   const sb = supabaseBrowser();
   const { toast } = useToast();
 
-  // Background editing
   const [bg, setBg] = useState(student.background ?? '');
   const [savedBg, setSavedBg] = useState(student.background ?? '');
   const [editingBg, setEditingBg] = useState(false);
 
-  // Dipti's notes editing (NEW)
   const [diptiNotes, setDiptiNotes] = useState(student.dipti_comments ?? '');
   const [savedDiptiNotes, setSavedDiptiNotes] = useState(student.dipti_comments ?? '');
   const [editingDipti, setEditingDipti] = useState(false);
 
-  // Identity editing
   const [editingIdentity, setEditingIdentity] = useState(false);
   const [firstName, setFirstName] = useState(student.first_name ?? '');
   const [lastName, setLastName] = useState(student.last_name ?? '');
   const [email, setEmail] = useState(student.email ?? '');
   const [mobile, setMobile] = useState(student.mobile ?? '');
 
-  // Program editing
   const [editingProgram, setEditingProgram] = useState(false);
   const [membership, setMembership] = useState(student.membership ?? '');
   const [startDate, setStartDate] = useState(student.start_date ?? '');
@@ -127,40 +123,41 @@ export function ProfileTab({ student }: { student: Student }) {
 
   return (
     <div className="space-y-7">
-      {/* DIPTI'S NOTES — at top so it's prominent */}
+      {/* DIPTI'S NOTES — high contrast, theme-agnostic */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-[12px] uppercase tracking-wider font-semibold flex items-center gap-1.5 text-rose-700">
-            <Sparkles className="w-3 h-3" /> Dipti Mam's Notes
+          <h3 className="text-[12px] uppercase tracking-wider font-bold flex items-center gap-1.5 text-ink-900">
+            <span className="inline-block w-1 h-3.5 bg-rose-500 rounded-sm" />
+            <Sparkles className="w-3 h-3 text-rose-500" /> Dipti Mams's Notes
           </h3>
         </div>
-        <div className="bg-rose-50/50 border border-rose-200/70 rounded-xl p-5">
+        <div className="bg-white border-2 border-l-4 border-rose-400 rounded-xl p-5 shadow-sm">
           {editingDipti ? (
             <textarea
               value={diptiNotes}
               onChange={(e) => setDiptiNotes(e.target.value)}
               rows={4}
-              className="w-full text-[13.5px] leading-relaxed outline-none resize-none bg-transparent placeholder:text-ink-400"
+              className="w-full text-[13.5px] leading-relaxed outline-none resize-none bg-white text-ink-900 placeholder:text-ink-400"
               placeholder="Dipti's personal notes about this student…"
               autoFocus
             />
           ) : (
-            <div className="text-[13.5px] leading-relaxed text-ink-800 min-h-[1.5em] whitespace-pre-line">
-              {savedDiptiNotes || <span className="text-ink-400 italic">No notes from Dipti yet.</span>}
+            <div className="text-[13.5px] leading-relaxed text-ink-900 min-h-[1.5em] whitespace-pre-line font-medium">
+              {savedDiptiNotes || <span className="text-ink-500 italic font-normal">No notes from Dipti yet.</span>}
             </div>
           )}
-          <div className="mt-3 pt-3 border-t border-rose-200/40 flex items-center gap-2">
+          <div className="mt-3 pt-3 border-t border-ink-100 flex items-center gap-2">
             {editingDipti ? (
               <>
-                <button onClick={saveDipti} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium btn-primary flex items-center gap-1">
+                <button onClick={saveDipti} className="h-7 px-2.5 rounded-md text-[11.5px] font-semibold bg-rose-600 text-white hover:bg-rose-700 flex items-center gap-1">
                   <Check className="w-3 h-3" /> Save
                 </button>
-                <button onClick={cancelDipti} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-rose-200 hover:bg-rose-100 flex items-center gap-1">
+                <button onClick={cancelDipti} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
                   <X className="w-3 h-3" /> Cancel
                 </button>
               </>
             ) : (
-              <button onClick={() => setEditingDipti(true)} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-rose-200 hover:bg-rose-100 flex items-center gap-1">
+              <button onClick={() => setEditingDipti(true)} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
                 <Pencil className="w-3 h-3" /> Edit
               </button>
             )}
