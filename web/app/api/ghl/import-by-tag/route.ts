@@ -6,6 +6,56 @@ import { ghlSearchContactsByTag } from '@/lib/ghl/client';
 // POST /api/ghl/import-by-tag
 // body: { tag: string }
 // Paginates through GHL contacts with the given tag and upserts them into students.
+//
+// IMPORTANT: GHL contacts often carry 50+ marketing/campaign tags from years of
+// workflows (bb15, gps24, bfs2025-l1n, etc.) which are NOT relevant to DVA's
+// dashboard tracking. We filter to a small allowlist matching what the
+// Diamond Master Sheet actually uses.
+//
+// Edit ALLOWED_TAGS below to change which GHL tags survive import. The match
+// is case-insensitive against the FULL tag string.
+
+const ALLOWED_TAGS = new Set([
+  // DVA tracking codes from Master Sheet (Tags column)
+  's',
+  'sh',
+  'shdc',
+  'sdc',
+  'dc',
+  'j',
+  'js',
+  'jsdc',
+  'jdc',
+  'j-incomplete',
+  // Useful status indicators that map cleanly
+  'diamond',
+  'diamond waitlist',
+  'diamond-interested',
+  'alumni',
+  'ex-diamond',
+  'urgent',
+  'absent',
+  'on-hold',
+]);
+
+function filterDvaTags(rawTags: unknown): string[] {
+  if (!rawTags) return [];
+  // GHL can return tags as array OR sometimes a comma-separated string.
+  const arr: string[] = Array.isArray(rawTags)
+    ? rawTags.map((t) => String(t))
+    : String(rawTags).split(',').map((t) => t.trim());
+
+  const kept: string[] = [];
+  for (const raw of arr) {
+    const normalized = raw.trim().toLowerCase();
+    if (ALLOWED_TAGS.has(normalized)) {
+      // Preserve original casing from GHL
+      kept.push(raw.trim());
+    }
+  }
+  // Dedupe preserving order.
+  return Array.from(new Set(kept));
+}
 
 export async function POST(req: Request) {
   const sb = supabaseServer();
@@ -26,14 +76,25 @@ export async function POST(req: Request) {
 
       for (const c of contacts) {
         if (!c.email) continue;
-        const { data: existing } = await admin.from('students').select('id').eq('email', c.email.toLowerCase()).maybeSingle();
+        const { data: existing } = await admin
+          .from('students')
+          .select('id, tags')
+          .eq('email', c.email.toLowerCase())
+          .maybeSingle();
+
+        const filteredFromGhl = filterDvaTags(c.tags);
+
+        // Merge with existing tags so coaches' manual additions aren't lost.
+        const existingTags = ((existing as any)?.tags ?? []) as string[];
+        const merged = Array.from(new Set([...existingTags, ...filteredFromGhl]));
+
         const payload = {
           ghl_contact_id: c.id,
           email: c.email.toLowerCase(),
           first_name: c.firstName ?? null,
           last_name: c.lastName ?? null,
           mobile: c.phone ?? null,
-          tags: c.tags ?? [],
+          tags: merged,
         };
         if (existing) {
           await admin.from('students').update(payload).eq('id', existing.id);
