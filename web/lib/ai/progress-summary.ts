@@ -42,13 +42,14 @@ type Emi = {
 
 type Provider = 'openai' | 'anthropic' | 'google' | 'groq' | 'openrouter';
 
-// Use current Google model — gemini-1.5-flash was deprecated.
-// gemini-2.5-flash is stable and in the free tier.
+// Current production models (May 2026):
+//   - Groq: llama-3.3-70b-versatile (3.1 was decommissioned)
+//   - Google: gemini-2.5-flash (1.5 was deprecated)
 const PROVIDER_CFG: Record<Provider, { endpoint: string; model: string; label: string }> = {
   openai:     { endpoint: 'https://api.openai.com/v1/chat/completions',                 model: 'gpt-4o-mini',               label: 'OpenAI GPT-4o-mini' },
   anthropic:  { endpoint: '',                                                            model: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   google:     { endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',    model: 'gemini-2.5-flash',          label: 'Gemini 2.5 Flash' },
-  groq:       { endpoint: 'https://api.groq.com/openai/v1/chat/completions',            model: 'llama-3.1-70b-versatile',   label: 'Groq Llama 3.1 70B' },
+  groq:       { endpoint: 'https://api.groq.com/openai/v1/chat/completions',            model: 'llama-3.3-70b-versatile',   label: 'Groq Llama 3.3 70B' },
   openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions',              model: 'openai/gpt-4o-mini',        label: 'OpenRouter (GPT-4o-mini)' },
 };
 
@@ -59,7 +60,7 @@ function buildContext(student: Student, calls: Call[], emi: Emi[]): string {
   ].map((b, i) => `M${i + 1}: ${b ? '✓' : '✗'}`).join(' · ');
 
   const emiSnap = emi.map((e) =>
-    `${e.installment_no}/${e.installments_total} · ₹${e.amount} · due ${e.due_date} · ${e.status}${e.paid_date ? ` (paid ${e.paid_date})` : ''}`
+    `${e.installment_no}/${e.installments_total} · ${e.amount} · due ${e.due_date} · ${e.status}${e.paid_date ? ` (paid ${e.paid_date})` : ''}`
   ).join('\n');
 
   const callLines = calls.map((c) =>
@@ -91,7 +92,7 @@ async function callOpenAICompatible(
       ...extraHeaders,
     },
     body: JSON.stringify({
-      model, max_tokens: 600,
+      model, max_tokens: 1500,
       messages: [
         { role: 'system', content: system },
         { role: 'user',   content: user },
@@ -113,7 +114,7 @@ async function callAnthropic(
 ): Promise<{ text: string; in: number; out: number; model: string }> {
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
-    model, max_tokens: 600, system,
+    model, max_tokens: 1500, system,
     messages: [{ role: 'user', content: user }],
   });
   const text = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
@@ -130,13 +131,32 @@ async function callGoogle(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { maxOutputTokens: 600 },
+      generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+      ],
     }),
   });
-  if (!res.ok) throw new Error(`Google returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`Google returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
+  const candidate = data?.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text;
+  if (!text) {
+    const finishReason   = candidate?.finishReason ?? 'unknown';
+    const safetyRatings  = candidate?.safetyRatings ?? [];
+    const blockedCat     = safetyRatings.find((r: any) => r.blocked)?.category ?? null;
+    const promptFeedback = data?.promptFeedback?.blockReason ?? null;
+    throw new Error(
+      `Gemini returned no text (finishReason=${finishReason}` +
+      (blockedCat ? `, blocked=${blockedCat}` : '') +
+      (promptFeedback ? `, prompt_blocked=${promptFeedback}` : '') + ')'
+    );
+  }
   return {
-    text:  data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '',
+    text,
     in:    data?.usageMetadata?.promptTokenCount     ?? 0,
     out:   data?.usageMetadata?.candidatesTokenCount ?? 0,
     model,
@@ -196,6 +216,14 @@ export async function generateProgressSummary(input: {
         result = await callOpenAICompatible(cfg.endpoint, cfg.model, effectiveKey, PROGRESS_SYSTEM_PROMPT, context);
         break;
     }
+
+    if (!result.text || !result.text.trim()) {
+      return {
+        summary_md: '## Where they stand\n_AI returned an empty response. Try clicking 🔄 to regenerate, or switch providers in Settings._',
+        model: `${result.model}:empty`, tokens_in: result.in, tokens_out: result.out, provider,
+      };
+    }
+
     return {
       summary_md: result.text,
       model: result.model,
@@ -207,9 +235,9 @@ export async function generateProgressSummary(input: {
     return {
       summary_md: [
         '## Where they stand',
-        `_AI summary failed: ${(e?.message ?? 'unknown error').slice(0, 200)}_`,
+        `_AI summary failed: ${(e?.message ?? 'unknown error').slice(0, 300)}_`,
         '',
-        '_Check your API key in Settings, or try a different provider._',
+        '_Click 🔄 to retry, or pick a different provider in Settings._',
       ].join('\n'),
       model: `${provider}:error`, tokens_in: 0, tokens_out: 0, provider,
     };

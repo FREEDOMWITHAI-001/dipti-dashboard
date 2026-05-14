@@ -35,18 +35,15 @@ type Emi = {
 
 type Provider = 'openai' | 'anthropic' | 'google' | 'groq' | 'openrouter';
 
-// Model + endpoint config per provider. Keep models cheap/fast — these
-// summaries are short and we run them frequently.
-const PROVIDER_CFG: Record<Provider, {
-  endpoint: string;
-  model: string;
-  label: string;
-}> = {
-  openai:     { endpoint: 'https://api.openai.com/v1/chat/completions',                 model: 'gpt-4o-mini',                       label: 'OpenAI GPT-4o-mini' },
-  anthropic:  { endpoint: '',                                                            model: 'claude-haiku-4-5-20251001',         label: 'Claude Haiku 4.5' },
-  google:     { endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',    model: 'gemini-1.5-flash',                  label: 'Gemini 1.5 Flash' },
-  groq:       { endpoint: 'https://api.groq.com/openai/v1/chat/completions',            model: 'llama-3.1-70b-versatile',           label: 'Groq Llama 3.1 70B' },
-  openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions',              model: 'openai/gpt-4o-mini',                label: 'OpenRouter (GPT-4o-mini)' },
+// Current production models (May 2026):
+//   - Groq: llama-3.3-70b-versatile (3.1 was decommissioned)
+//   - Google: gemini-2.5-flash (1.5 was deprecated)
+const PROVIDER_CFG: Record<Provider, { endpoint: string; model: string; label: string }> = {
+  openai:     { endpoint: 'https://api.openai.com/v1/chat/completions',                 model: 'gpt-4o-mini',               label: 'OpenAI GPT-4o-mini' },
+  anthropic:  { endpoint: '',                                                            model: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  google:     { endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',    model: 'gemini-2.5-flash',          label: 'Gemini 2.5 Flash' },
+  groq:       { endpoint: 'https://api.groq.com/openai/v1/chat/completions',            model: 'llama-3.3-70b-versatile',   label: 'Groq Llama 3.3 70B' },
+  openrouter: { endpoint: 'https://openrouter.ai/api/v1/chat/completions',              model: 'openai/gpt-4o-mini',        label: 'OpenRouter (GPT-4o-mini)' },
 };
 
 function buildContext(student: Student, calls: Call[], emi: Emi[]): string {
@@ -56,7 +53,7 @@ function buildContext(student: Student, calls: Call[], emi: Emi[]): string {
   ].map((b, i) => `M${i + 1}: ${b ? '✓' : '✗'}`).join(' · ');
 
   const emiSnap = emi.map((e) =>
-    `${e.installment_no}/${e.installments_total} · ₹${e.amount} · due ${e.due_date} · ${e.status}${e.paid_date ? ` (paid ${e.paid_date})` : ''}`
+    `${e.installment_no}/${e.installments_total} · ${e.amount} · due ${e.due_date} · ${e.status}${e.paid_date ? ` (paid ${e.paid_date})` : ''}`
   ).join('\n');
 
   const callLines = calls.map((c) =>
@@ -67,16 +64,14 @@ function buildContext(student: Student, calls: Call[], emi: Emi[]): string {
     `STUDENT: ${student.first_name ?? ''} ${student.last_name ?? ''}`,
     `Membership: ${student.membership ?? '—'} · Tags: ${(student.tags ?? []).join(', ') || '—'}`,
     `Enrolled: ${student.start_date ?? '?'} → ${student.end_date ?? '?'}`,
-    `Progress: ${progress}`,
+    `Monthly checkpoint progress: ${progress}`,
     `Background: ${student.background ?? '—'}`,
     '',
-    `EMI:\n${emiSnap || '(none)'}`,
+    `EMI:\n${emiSnap || '(no EMI plan)'}`,
     '',
     `CALLS (oldest → newest):\n${callLines || '(no calls logged yet)'}`,
   ].join('\n');
 }
-
-// ---- Provider-specific call functions ----
 
 async function callOpenAICompatible(
   endpoint: string, model: string, apiKey: string, system: string, user: string,
@@ -90,8 +85,7 @@ async function callOpenAICompatible(
       ...extraHeaders,
     },
     body: JSON.stringify({
-      model,
-      max_tokens: 600,
+      model, max_tokens: 1500,
       messages: [
         { role: 'system', content: system },
         { role: 'user',   content: user },
@@ -100,10 +94,12 @@ async function callOpenAICompatible(
   });
   if (!res.ok) throw new Error(`${endpoint.split('/')[2]} returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
-  const text  = data?.choices?.[0]?.message?.content ?? '';
-  const inTok  = data?.usage?.prompt_tokens     ?? 0;
-  const outTok = data?.usage?.completion_tokens ?? 0;
-  return { text, in: inTok, out: outTok, model: data?.model ?? model };
+  return {
+    text:  data?.choices?.[0]?.message?.content ?? '',
+    in:    data?.usage?.prompt_tokens     ?? 0,
+    out:   data?.usage?.completion_tokens ?? 0,
+    model: data?.model ?? model,
+  };
 }
 
 async function callAnthropic(
@@ -111,7 +107,7 @@ async function callAnthropic(
 ): Promise<{ text: string; in: number; out: number; model: string }> {
   const client = new Anthropic({ apiKey });
   const msg = await client.messages.create({
-    model, max_tokens: 600, system,
+    model, max_tokens: 1500, system,
     messages: [{ role: 'user', content: user }],
   });
   const text = msg.content[0]?.type === 'text' ? msg.content[0].text : '';
@@ -121,7 +117,6 @@ async function callAnthropic(
 async function callGoogle(
   apiKey: string, model: string, system: string, user: string
 ): Promise<{ text: string; in: number; out: number; model: string }> {
-  // Google's REST format is different: system instruction + contents array
   const url = `${PROVIDER_CFG.google.endpoint}/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -129,43 +124,66 @@ async function callGoogle(
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: { maxOutputTokens: 600 },
+      generationConfig: { maxOutputTokens: 1500, temperature: 0.7 },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+      ],
     }),
   });
-  if (!res.ok) throw new Error(`Google returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`Google returned ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  const inTok  = data?.usageMetadata?.promptTokenCount     ?? 0;
-  const outTok = data?.usageMetadata?.candidatesTokenCount ?? 0;
-  return { text, in: inTok, out: outTok, model };
+  const candidate = data?.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text;
+  if (!text) {
+    const finishReason   = candidate?.finishReason ?? 'unknown';
+    const safetyRatings  = candidate?.safetyRatings ?? [];
+    const blockedCat     = safetyRatings.find((r: any) => r.blocked)?.category ?? null;
+    const promptFeedback = data?.promptFeedback?.blockReason ?? null;
+    throw new Error(
+      `Gemini returned no text (finishReason=${finishReason}` +
+      (blockedCat ? `, blocked=${blockedCat}` : '') +
+      (promptFeedback ? `, prompt_blocked=${promptFeedback}` : '') + ')'
+    );
+  }
+  return {
+    text,
+    in:    data?.usageMetadata?.promptTokenCount     ?? 0,
+    out:   data?.usageMetadata?.candidatesTokenCount ?? 0,
+    model,
+  };
 }
 
 export async function generateBriefing(input: {
   student: Student; calls: Call[]; emi: Emi[];
-}): Promise<{ summary_md: string; model: string; tokens_in: number; tokens_out: number }> {
+}): Promise<{ briefing_md: string; model: string; tokens_in: number; tokens_out: number; provider: string }> {
   const { aiProvider, aiApiKey, anthropic } = await getRuntimeSettings();
 
-  // Pick effective provider + key. Falls back to legacy anthropic_api_key
-  // column if ai_api_key isn't set yet (eases migration).
   const provider: Provider = (aiProvider as Provider) || 'anthropic';
   const effectiveKey = aiApiKey || (provider === 'anthropic' ? anthropic : undefined);
+  const cfg = PROVIDER_CFG[provider];
 
   if (!effectiveKey) {
     return {
-      summary_md: [
+      briefing_md: [
         '## Story',
-        `_AI briefing is unavailable — save an API key for **${PROVIDER_CFG[provider].label}** in Settings to enable._`,
+        `_AI briefing is unavailable — pick an AI provider in **Settings → AI assistant** and save its API key._`,
         '',
         '## Ongoing threads',
         input.calls.length === 0
           ? '_No calls logged yet._'
           : `${input.calls.length} call(s) on file. View the timeline below.`,
+        '',
+        '## Open actions',
+        '_Configure AI to surface open actions automatically._',
+        '',
       ].join('\n'),
-      model: 'stub', tokens_in: 0, tokens_out: 0,
+      model: 'stub', tokens_in: 0, tokens_out: 0, provider,
     };
   }
 
-  const cfg = PROVIDER_CFG[provider];
   const context = buildContext(input.student, input.calls, input.emi);
 
   try {
@@ -189,21 +207,30 @@ export async function generateBriefing(input: {
         result = await callOpenAICompatible(cfg.endpoint, cfg.model, effectiveKey, BRIEFING_SYSTEM_PROMPT, context);
         break;
     }
+
+    if (!result.text || !result.text.trim()) {
+      return {
+        briefing_md: '## Story\n_AI returned an empty response. Try clicking 🔄 to regenerate, or switch providers in Settings._',
+        model: `${result.model}:empty`, tokens_in: result.in, tokens_out: result.out, provider,
+      };
+    }
+
     return {
-      summary_md: result.text,
+      briefing_md: result.text,
       model: result.model,
       tokens_in: result.in,
       tokens_out: result.out,
+      provider,
     };
   } catch (e: any) {
     return {
-      summary_md: [
+      briefing_md: [
         '## Story',
-        `_AI briefing failed: ${(e?.message ?? 'unknown error').slice(0, 200)}_`,
+        `_AI briefing failed: ${(e?.message ?? 'unknown error').slice(0, 300)}_`,
         '',
-        '_Check your API key in Settings, or try a different provider._',
+        '_Click 🔄 to retry, or pick a different provider in Settings._',
       ].join('\n'),
-      model: `${provider}:error`, tokens_in: 0, tokens_out: 0,
+      model: `${provider}:error`, tokens_in: 0, tokens_out: 0, provider,
     };
   }
 }

@@ -11,7 +11,31 @@ type State = {
   is_stale: boolean;
   source_calls_count: number;
   generated_at: string | null;
+  model?: string | null;
+  provider?: string | null;
 };
+
+// Friendly name for the footer "powered by …" text.
+function providerLabel(model: string | null | undefined, provider: string | null | undefined): string {
+  // Prefer the human label derived from the model name when available.
+  const m = (model ?? '').toLowerCase();
+  if (m.includes('haiku'))    return 'Claude Haiku';
+  if (m.includes('sonnet'))   return 'Claude Sonnet';
+  if (m.includes('opus'))     return 'Claude Opus';
+  if (m.includes('gpt-4o'))   return 'GPT-4o';
+  if (m.includes('gpt-4'))    return 'GPT-4';
+  if (m.includes('gemini'))   return 'Gemini';
+  if (m.includes('llama'))    return 'Llama 3.1';
+  // Fall back to the provider field stored at generation time.
+  switch ((provider ?? '').toLowerCase()) {
+    case 'openai':     return 'OpenAI';
+    case 'anthropic':  return 'Claude';
+    case 'google':     return 'Gemini';
+    case 'groq':       return 'Groq';
+    case 'openrouter': return 'OpenRouter';
+    default:           return 'AI';
+  }
+}
 
 export function BriefingCard({ studentId, callsCount }: { studentId: string; callsCount: number }) {
   const sb = useMemo(() => supabaseBrowser(), []);
@@ -25,12 +49,12 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
     (async () => {
       const { data } = await sb
         .from('student_briefings')
-        .select('summary_md, is_stale, source_calls_count, generated_at')
+        .select('summary_md, is_stale, source_calls_count, generated_at, model, provider')
         .eq('student_id', studentId)
         .maybeSingle();
       if (!cancel) {
         if (!data || data.is_stale) regenerate();
-        else setState(data);
+        else setState(data as State);
       }
     })();
     return () => { cancel = true; };
@@ -47,7 +71,14 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
       });
       if (!r.ok) throw new Error(await r.text());
       const d = await r.json();
-      setState({ summary_md: d.summary_md, is_stale: false, source_calls_count: d.source_calls_count, generated_at: new Date().toISOString() });
+      setState({
+        summary_md:         d.summary_md,
+        is_stale:           false,
+        source_calls_count: d.source_calls_count,
+        generated_at:       new Date().toISOString(),
+        model:              d.model,
+        provider:           d.provider,
+      });
     } catch (e: any) {
       toast(e.message ?? 'Failed to regenerate', 'error');
     }
@@ -65,6 +96,8 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
       </div>
     );
   }
+
+  const poweredBy = providerLabel(state?.model, state?.provider);
 
   return (
     <div className="briefing-card rounded-2xl p-6 mb-6 relative overflow-hidden">
@@ -103,7 +136,7 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
             </article>
             <div className="mt-5 pt-4 border-t border-ink-100/80 flex items-center gap-2 text-[11px] text-ink-400">
               <Info className="w-3.5 h-3.5" />
-              AI-generated · verify before quoting · powered by Claude Haiku
+              AI-generated · verify before quoting · powered by {poweredBy}
             </div>
           </>
         )
