@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Check } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Check, Phone, IndianRupee } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { StudentAvatar } from '@/components/ui/avatar';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -18,11 +18,17 @@ const PAGE_SIZE = 10;
 const TAG_DISPLAY_LIMIT = 3;
 
 export function StudentsTable({
-  initialStudents, totalCount, initialFilter = 'all',
+  initialStudents,
+  totalCount,
+  initialFilter = 'all',
+  lastCallByStudent = {},
+  lastPaymentByStudent = {},
 }: {
   initialStudents: Row[];
   totalCount: number;
   initialFilter?: InitialFilter;
+  lastCallByStudent?: Record<string, string>;
+  lastPaymentByStudent?: Record<string, { mode: string; date: string }>;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -45,6 +51,12 @@ export function StudentsTable({
   useEffect(() => {
     const ch = sb.channel('students-list')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, () => {
+        router.refresh();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'call_logs' }, () => {
+        router.refresh();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'emi_schedule' }, () => {
         router.refresh();
       })
       .subscribe();
@@ -149,8 +161,15 @@ export function StudentsTable({
         </div>
       )}
 
-      <div className="grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
-        <div /><div>Student</div><div>Membership</div><div>Tags</div><div>End date</div><div>Last call</div><div className="text-right">Status</div>
+      <div className="grid grid-cols-[36px_1.5fr_0.9fr_0.9fr_0.7fr_0.8fr_0.9fr_0.5fr] gap-3 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
+        <div />
+        <div>Student</div>
+        <div>Membership</div>
+        <div>Tags</div>
+        <div>End date</div>
+        <div>Last call</div>
+        <div>Payment</div>
+        <div className="text-right">Status</div>
       </div>
 
       <div>
@@ -159,21 +178,23 @@ export function StudentsTable({
           const visibleTags = (s.tags ?? []).slice(0, TAG_DISPLAY_LIMIT);
           const overflowCount = Math.max(0, totalTags - TAG_DISPLAY_LIMIT);
           const overflowTagsTitle = (s.tags ?? []).slice(TAG_DISPLAY_LIMIT).join(', ');
+          const lastCall = lastCallByStudent[s.id];
+          const lastPayment = lastPaymentByStudent[s.id];
 
           return (
             <button
               key={s.id}
               onClick={() => openStudent(s.id)}
-              className="row-clickable w-full text-left grid grid-cols-[36px_1.6fr_0.9fr_0.9fr_0.8fr_1fr_0.5fr] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
+              className="row-clickable w-full text-left grid grid-cols-[36px_1.5fr_0.9fr_0.9fr_0.7fr_0.8fr_0.9fr_0.5fr] gap-3 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
             >
               <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
               <div className="min-w-0">
                 <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
                 <div className="text-[11.5px] text-ink-500 truncate">{s.email}</div>
               </div>
-              <div className="text-[13px]">
-                <div className="text-ink-900 font-medium">{s.membership ?? '—'}</div>
-                <div className="text-[11px] text-ink-500">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
+              <div className="text-[13px] min-w-0">
+                <div className="text-ink-900 font-medium truncate">{s.membership ?? '—'}</div>
+                <div className="text-[11px] text-ink-500 truncate">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
               </div>
               <div className="flex flex-wrap gap-1 items-center min-w-0">
                 {totalTags === 0 && <span className="text-[11px] text-ink-400">—</span>}
@@ -189,9 +210,9 @@ export function StudentsTable({
                   </span>
                 )}
               </div>
-              <div className="text-[12.5px]">
-                <div className="font-medium">{fmtDateShort(s.end_date)}</div>
-                <div className="text-[10.5px] text-ink-500">{
+              <div className="text-[12.5px] min-w-0">
+                <div className="font-medium truncate">{fmtDateShort(s.end_date)}</div>
+                <div className="text-[10.5px] text-ink-500 truncate">{
                   (() => {
                     const d = daysFromNow(s.end_date);
                     if (d === null) return '—';
@@ -200,7 +221,26 @@ export function StudentsTable({
                   })()
                 }</div>
               </div>
-              <div className="text-[12px] text-ink-500">—</div>
+              <div className="text-[12px] min-w-0">
+                {lastCall ? (
+                  <div className="inline-flex items-center gap-1 text-ink-700">
+                    <Phone className="w-3 h-3 text-ink-400 flex-shrink-0" />
+                    <span className="truncate">{lastCall}</span>
+                  </div>
+                ) : (
+                  <span className="text-ink-400">—</span>
+                )}
+              </div>
+              <div className="text-[12px] min-w-0">
+                {lastPayment ? (
+                  <div className="inline-flex items-center gap-1 text-ink-700">
+                    <IndianRupee className="w-3 h-3 text-ink-400 flex-shrink-0" />
+                    <span className="truncate">{lastPayment.mode} · {lastPayment.date}</span>
+                  </div>
+                ) : (
+                  <span className="text-ink-400">—</span>
+                )}
+              </div>
               <div className="flex items-center justify-end">
                 <StatusPill status={studentStatusFromEnd(s.end_date)} />
               </div>
