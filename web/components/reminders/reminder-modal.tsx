@@ -54,7 +54,16 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
           studentId: student.id,
           emiId: emi?.id ?? null,
           channel,
-          payload: { first_name: student.first_name, amount: emi?.amount, due_date: emi?.due_date, link: emi?.payment_link },
+          payload: {
+            first_name: student.first_name,
+            last_name: student.last_name,
+            email: student.email,
+            phone: student.mobile,
+            emi_amount: emi?.amount,
+            payment_link: emi?.payment_link ?? '',
+            due_date: emi?.due_date,
+            installment: emi ? `${emi.installment_no}/${emi.installments_total}` : '',
+          },
         }),
       });
       if (!r.ok) throw new Error(await r.text());

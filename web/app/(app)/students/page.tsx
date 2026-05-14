@@ -12,8 +12,11 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
   const sb = supabaseServer();
   const activeFilter = (searchParams?.filter ?? 'all') as Filter;
 
+  // Fetch ALL students (not just latest 50). Increased limit to 2000 so the
+  // entire Diamond roster loads. The table itself paginates client-side via
+  // PAGE_SIZE in students-table.tsx, so the user still sees 10 at a time.
   const [{ data: students, count }, { count: overdueCount }, { data: dueAmount }] = await Promise.all([
-    sb.from('students').select('*', { count: 'exact' }).is('deleted_at', null).order('created_at', { ascending: false }).limit(50),
+    sb.from('students').select('*', { count: 'exact' }).is('deleted_at', null).order('created_at', { ascending: false }).limit(2000),
     sb.from('emi_schedule').select('id', { count: 'exact', head: true }).eq('status', 'overdue'),
     sb.from('emi_schedule').select('amount').eq('status', 'overdue'),
   ]);

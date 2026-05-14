@@ -1,4 +1,12 @@
 // Reminder dispatch + sweep helpers used by cron routes and manual trigger API.
+//
+// Webhook payload field names match the GHL workflow's Create Contact node:
+//   - emi_amount     → {{inboundWebhookRequest.emi_amount}}     → saved to contact.diamond_emi_amount
+//   - payment_link   → {{inboundWebhookRequest.payment_link}}   → saved to contact.diamond_emi_payment_link
+//   - due_date       → {{inboundWebhookRequest.due_date}}       → saved to contact.due_date
+//   - first_name, last_name, email, phone → standard contact fields
+//
+// Then WhatsApp template uses {{contact.diamond_emi_amount}} etc.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ghlTriggerWorkflow, GhlError } from '@/lib/ghl/client';
@@ -87,7 +95,8 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
         first_name: r.first_name,
         last_name: r.last_name,
         phone: normalizePhone(r.mobile),
-        amount: r.amount,
+        emi_amount: r.amount,
+        payment_link: r.payment_link ?? '',
         due_date: r.due_date,
         installment: `${r.installment_no}/${r.installments_total}`,
       },
@@ -113,7 +122,8 @@ export async function sweepEmiOverdue(sb: AnyClient, workflowId: string | null):
         first_name: r.first_name,
         last_name: r.last_name,
         phone: normalizePhone(r.mobile),
-        amount: r.amount,
+        emi_amount: r.amount,
+        payment_link: r.payment_link ?? '',
         due_date: r.due_date,
       },
       triggeredBy: null,
