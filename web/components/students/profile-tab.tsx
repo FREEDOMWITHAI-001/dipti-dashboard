@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Check, X } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { fmtDate } from '@/lib/utils';
 import { VoiceButton } from './voice-button';
@@ -10,65 +10,144 @@ import type { Database } from '@/types/database';
 
 type Student = Database['public']['Tables']['students']['Row'];
 
+const MEMBERSHIP_OPTIONS = [
+  '', '💎 3A', '💎 LT', '💎 E', '💎 A', '💎 4A', '💎 Dep',
+  '💎 3A (EMI)', '💎 LT (EMI)', '💎 E (EMI)', '💎 A (EMI)',
+  '💎 E EMI Default', '💎 A EMI Default', 'LT EMI Default', 'Dep Default',
+  'Ex-💎', 'R💎 Deposit', 'on hold 💎 Dep', 'Settled',
+];
+
 export function ProfileTab({ student }: { student: Student }) {
   const sb = supabaseBrowser();
   const { toast } = useToast();
+
+  // Background editing (existing)
   const [bg, setBg] = useState(student.background ?? '');
   const [savedBg, setSavedBg] = useState(student.background ?? '');
-  const [editing, setEditing] = useState(false);
+  const [editingBg, setEditingBg] = useState(false);
 
-  // Only re-sync from prop when we navigate to a *different* student.
-  // We intentionally ignore changes to `student.background` on the same
-  // student because:
-  //   1. After we save, we already update savedBg ourselves
-  //   2. The slideover's realtime subscription may refetch with stale data,
-  //      racing our save and wiping out the freshly-saved text
+  // Identity editing (new)
+  const [editingIdentity, setEditingIdentity] = useState(false);
+  const [firstName, setFirstName] = useState(student.first_name ?? '');
+  const [lastName, setLastName] = useState(student.last_name ?? '');
+  const [email, setEmail] = useState(student.email ?? '');
+  const [mobile, setMobile] = useState(student.mobile ?? '');
+
+  // Program editing (new)
+  const [editingProgram, setEditingProgram] = useState(false);
+  const [membership, setMembership] = useState(student.membership ?? '');
+  const [startDate, setStartDate] = useState(student.start_date ?? '');
+  const [endDate, setEndDate] = useState(student.end_date ?? '');
+
   const lastStudentId = useRef<string>(student.id);
   useEffect(() => {
     if (lastStudentId.current !== student.id) {
       setBg(student.background ?? '');
       setSavedBg(student.background ?? '');
-      setEditing(false);
+      setEditingBg(false);
+      setFirstName(student.first_name ?? '');
+      setLastName(student.last_name ?? '');
+      setEmail(student.email ?? '');
+      setMobile(student.mobile ?? '');
+      setEditingIdentity(false);
+      setMembership(student.membership ?? '');
+      setStartDate(student.start_date ?? '');
+      setEndDate(student.end_date ?? '');
+      setEditingProgram(false);
       lastStudentId.current = student.id;
     }
-  }, [student.id, student.background]);
+  }, [student.id, student.background, student.first_name, student.last_name, student.email, student.mobile, student.membership, student.start_date, student.end_date]);
 
-  async function save() {
-    const newValue = bg; // snapshot before the async call
+  async function saveBg() {
+    const newValue = bg;
     const { error } = await sb.from('students').update({ background: newValue }).eq('id', student.id);
     if (error) { toast(error.message, 'error'); return; }
     setSavedBg(newValue);
-    setEditing(false);
+    setEditingBg(false);
     toast('Saved', 'success');
   }
 
-  function cancel() {
-    setBg(savedBg);
-    setEditing(false);
+  async function saveIdentity() {
+    const { error } = await sb.from('students').update({
+      first_name: firstName.trim() || null,
+      last_name: lastName.trim() || null,
+      email: email.trim().toLowerCase(),
+      mobile: mobile.trim() || null,
+    }).eq('id', student.id);
+    if (error) { toast(error.message, 'error'); return; }
+    setEditingIdentity(false);
+    toast('Identity updated', 'success');
+  }
+
+  async function saveProgram() {
+    const { error } = await sb.from('students').update({
+      membership: membership.trim() || null,
+      start_date: startDate || null,
+      end_date: endDate || null,
+    }).eq('id', student.id);
+    if (error) { toast(error.message, 'error'); return; }
+    setEditingProgram(false);
+    toast('Program updated', 'success');
+  }
+
+  function cancelBg() { setBg(savedBg); setEditingBg(false); }
+  function cancelIdentity() {
+    setFirstName(student.first_name ?? '');
+    setLastName(student.last_name ?? '');
+    setEmail(student.email ?? '');
+    setMobile(student.mobile ?? '');
+    setEditingIdentity(false);
+  }
+  function cancelProgram() {
+    setMembership(student.membership ?? '');
+    setStartDate(student.start_date ?? '');
+    setEndDate(student.end_date ?? '');
+    setEditingProgram(false);
   }
 
   return (
     <div className="space-y-7">
-      <Section title="Identity">
-        <Field label="First name" value={student.first_name ?? '—'} />
-        <Field label="Last name" value={student.last_name ?? '—'} />
-        <Field label="Email" value={student.email} />
-        <Field label="Mobile" value={student.mobile ?? '—'} />
-      </Section>
+      {/* IDENTITY */}
+      <div>
+        <SectionHeader title="Identity" editing={editingIdentity} onEdit={() => setEditingIdentity(true)} onSave={saveIdentity} onCancel={cancelIdentity} />
+        <div className="bg-white border border-ink-200/70 rounded-xl px-5">
+          <EditableField label="First name" editing={editingIdentity} value={firstName} display={student.first_name ?? '—'} onChange={setFirstName} />
+          <EditableField label="Last name" editing={editingIdentity} value={lastName} display={student.last_name ?? '—'} onChange={setLastName} />
+          <EditableField label="Email" editing={editingIdentity} value={email} display={student.email} type="email" onChange={setEmail} />
+          <EditableField label="Mobile" editing={editingIdentity} value={mobile} display={student.mobile ?? '—'} type="tel" onChange={setMobile} />
+        </div>
+      </div>
 
-      <Section title="Program">
-        <Field label="Membership" value={<span className="font-medium">{student.membership ?? '—'}</span>} />
-        <Field label="Tags" value={student.tags?.length
-          ? <>{student.tags.map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 mr-1">{t}</span>)}</>
-          : <span className="text-ink-400">none</span>} />
-        <Field label="Start date" value={fmtDate(student.start_date)} />
-        <Field label="End date" value={fmtDate(student.end_date)} />
-      </Section>
+      {/* PROGRAM */}
+      <div>
+        <SectionHeader title="Program" editing={editingProgram} onEdit={() => setEditingProgram(true)} onSave={saveProgram} onCancel={cancelProgram} />
+        <div className="bg-white border border-ink-200/70 rounded-xl px-5">
+          {editingProgram ? (
+            <EditableField
+              label="Membership"
+              editing
+              value={membership}
+              display={student.membership ?? '—'}
+              onChange={setMembership}
+              isSelect
+              options={MEMBERSHIP_OPTIONS}
+            />
+          ) : (
+            <Field label="Membership" value={<span className="font-medium">{student.membership ?? '—'}</span>} />
+          )}
+          <Field label="Tags" value={student.tags?.length
+            ? <>{student.tags.map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 mr-1">{t}</span>)}</>
+            : <span className="text-ink-400">none</span>} />
+          <EditableField label="Start date" editing={editingProgram} value={startDate} display={fmtDate(student.start_date)} type="date" onChange={setStartDate} />
+          <EditableField label="End date" editing={editingProgram} value={endDate} display={fmtDate(student.end_date)} type="date" onChange={setEndDate} />
+        </div>
+      </div>
 
+      {/* BACKGROUND */}
       <div>
         <h3 className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold mb-2">Background</h3>
         <div className="bg-white border border-ink-200/70 rounded-xl p-5">
-          {editing ? (
+          {editingBg ? (
             <textarea
               value={bg} onChange={(e) => setBg(e.target.value)}
               rows={4}
@@ -82,17 +161,17 @@ export function ProfileTab({ student }: { student: Student }) {
             </div>
           )}
           <div className="mt-3 pt-3 border-t border-ink-100 flex items-center gap-2">
-            {editing ? (
+            {editingBg ? (
               <>
-                <button onClick={save} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium btn-primary">Save</button>
-                <button onClick={cancel} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50">Cancel</button>
+                <button onClick={saveBg} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium btn-primary">Save</button>
+                <button onClick={cancelBg} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50">Cancel</button>
               </>
             ) : (
-              <button onClick={() => setEditing(true)} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
+              <button onClick={() => setEditingBg(true)} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
                 <Pencil className="w-3 h-3" /> Edit
               </button>
             )}
-            <VoiceButton onTranscript={(text) => { setBg((b) => (b ? b + '\n\n' : '') + text); setEditing(true); }} />
+            <VoiceButton onTranscript={(text) => { setBg((b) => (b ? b + '\n\n' : '') + text); setEditingBg(true); }} />
           </div>
         </div>
       </div>
@@ -100,11 +179,32 @@ export function ProfileTab({ student }: { student: Student }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionHeader({
+  title, editing, onEdit, onSave, onCancel,
+}: {
+  title: string;
+  editing: boolean;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
   return (
-    <div>
-      <h3 className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold mb-2">{title}</h3>
-      <div className="bg-white border border-ink-200/70 rounded-xl px-5">{children}</div>
+    <div className="flex items-center justify-between mb-2">
+      <h3 className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">{title}</h3>
+      {editing ? (
+        <div className="flex gap-1">
+          <button onClick={onSave} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium btn-primary flex items-center gap-1">
+            <Check className="w-3 h-3" /> Save
+          </button>
+          <button onClick={onCancel} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
+            <X className="w-3 h-3" /> Cancel
+          </button>
+        </div>
+      ) : (
+        <button onClick={onEdit} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1">
+          <Pencil className="w-3 h-3" /> Edit
+        </button>
+      )}
     </div>
   );
 }
@@ -114,6 +214,49 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="grid grid-cols-[160px_1fr] items-center gap-3 py-2.5 border-b border-ink-100 last:border-0">
       <div className="text-[12px] text-ink-500 font-medium">{label}</div>
       <div className="text-[13.5px]">{value}</div>
+    </div>
+  );
+}
+
+function EditableField({
+  label, editing, value, display, onChange, type = 'text', isSelect = false, options = [],
+}: {
+  label: string;
+  editing: boolean;
+  value: string;
+  display: React.ReactNode;
+  onChange: (v: string) => void;
+  type?: 'text' | 'email' | 'tel' | 'date';
+  isSelect?: boolean;
+  options?: string[];
+}) {
+  return (
+    <div className="grid grid-cols-[160px_1fr] items-center gap-3 py-2.5 border-b border-ink-100 last:border-0">
+      <div className="text-[12px] text-ink-500 font-medium">{label}</div>
+      <div className="text-[13.5px]">
+        {editing ? (
+          isSelect ? (
+            <select
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className="w-full h-8 px-2 text-[13px] border border-ink-200 rounded-md outline-none focus:border-accent-500 bg-white"
+            >
+              {options.map((opt) => (
+                <option key={opt} value={opt}>{opt || '— None —'}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type={type}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className="w-full h-8 px-2 text-[13px] border border-ink-200 rounded-md outline-none focus:border-accent-500"
+            />
+          )
+        ) : (
+          display
+        )}
+      </div>
     </div>
   );
 }
