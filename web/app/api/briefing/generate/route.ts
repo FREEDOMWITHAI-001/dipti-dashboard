@@ -5,7 +5,7 @@ import { generateBriefing } from '@/lib/ai/briefing';
 
 // POST /api/briefing/generate
 // body: { studentId }
-// Pulls student + calls + emi → Claude Haiku → caches in student_briefings.
+// Pulls student + calls + emi → AI provider → caches in student_briefings.
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   const admin = supabaseAdmin();
   await admin.from('student_briefings').upsert({
     student_id: studentId,
-    summary_md: result.summary_md,
+    summary_md: result.briefing_md,
     is_stale: false,
     source_calls_count: callRows.length,
     source_max_call_at: callRows.at(-1)?.created_at ?? null,
@@ -57,5 +57,12 @@ export async function POST(req: Request) {
     tokens_out: result.tokens_out,
   });
 
-  return NextResponse.json({ ...result, source_calls_count: callRows.length });
+  return NextResponse.json({
+    summary_md: result.briefing_md,
+    model: result.model,
+    tokens_in: result.tokens_in,
+    tokens_out: result.tokens_out,
+    provider: result.provider,
+    source_calls_count: callRows.length,
+  });
 }
