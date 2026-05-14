@@ -234,6 +234,13 @@ function TeamAccessCard({
 }) {
   const [tab, setTab] = useState<'create' | 'promote'>('create');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmDlg, setConfirmDlg] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    confirmTone: 'danger' | 'normal';
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
 
   const [coachForm, setCoachForm] = useState({
     email: '', password: '', name: '', initials: '', makeAdmin: false,
@@ -252,18 +259,25 @@ function TeamAccessCard({
       toast("Can't delete the last admin — promote another user first.", 'error'); return;
     }
     const label = m.display_name || m.email;
-    if (!confirm(`Permanently delete ${label}? This cannot be undone.`)) return;
-    setBusyId(m.id);
-    try {
-      const res = await fetch('/api/admin/delete-user', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: m.id }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      toast(`Deleted ${label}`, 'success');
-      setTimeout(() => window.location.reload(), 600);
-    } catch (e: any) { toast(e.message ?? 'Delete failed', 'error'); }
-    finally { setBusyId(null); }
+    setConfirmDlg({
+      title: 'Delete user?',
+      message: `Permanently delete ${label}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      confirmTone: 'danger',
+      onConfirm: async () => {
+        setBusyId(m.id);
+        try {
+          const res = await fetch('/api/admin/delete-user', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: m.id }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          toast(`Deleted ${label}`, 'success');
+          setTimeout(() => window.location.reload(), 600);
+        } catch (e: any) { toast(e.message ?? 'Delete failed', 'error'); }
+        finally { setBusyId(null); }
+      },
+    });
   }
 
   async function demote(m: TeamMember) {
@@ -271,33 +285,49 @@ function TeamAccessCard({
     if (isLastAdmin) {
       toast("Can't demote the last admin — promote another user first.", 'error'); return;
     }
-    if (!confirm(`Demote ${m.display_name || m.email} to coach?`)) return;
-    setBusyId(m.id);
-    try {
-      const res = await fetch('/api/admin/demote', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: m.id }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      toast(`Demoted ${m.display_name || m.email} to coach`, 'success');
-      setTimeout(() => window.location.reload(), 600);
-    } catch (e: any) { toast(e.message ?? 'Demote failed', 'error'); }
-    finally { setBusyId(null); }
+    const label = m.display_name || m.email;
+    setConfirmDlg({
+      title: 'Demote to coach?',
+      message: `${label} will lose admin privileges and become a coach.`,
+      confirmLabel: 'Demote',
+      confirmTone: 'normal',
+      onConfirm: async () => {
+        setBusyId(m.id);
+        try {
+          const res = await fetch('/api/admin/demote', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: m.id }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          toast(`Demoted ${label} to coach`, 'success');
+          setTimeout(() => window.location.reload(), 600);
+        } catch (e: any) { toast(e.message ?? 'Demote failed', 'error'); }
+        finally { setBusyId(null); }
+      },
+    });
   }
 
   async function promoteRow(m: TeamMember) {
-    if (!confirm(`Promote ${m.display_name || m.email} to admin?`)) return;
-    setBusyId(m.id);
-    try {
-      const res = await fetch('/api/admin/promote', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: m.email }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      toast(`Promoted ${m.display_name || m.email} to admin`, 'success');
-      setTimeout(() => window.location.reload(), 600);
-    } catch (e: any) { toast(e.message ?? 'Promote failed', 'error'); }
-    finally { setBusyId(null); }
+    const label = m.display_name || m.email;
+    setConfirmDlg({
+      title: 'Promote to admin?',
+      message: `${label} will gain full admin privileges including the ability to manage other admins.`,
+      confirmLabel: 'Promote',
+      confirmTone: 'normal',
+      onConfirm: async () => {
+        setBusyId(m.id);
+        try {
+          const res = await fetch('/api/admin/promote', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: m.email }),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          toast(`Promoted ${label} to admin`, 'success');
+          setTimeout(() => window.location.reload(), 600);
+        } catch (e: any) { toast(e.message ?? 'Promote failed', 'error'); }
+        finally { setBusyId(null); }
+      },
+    });
   }
 
   async function createCoach() {
@@ -335,6 +365,17 @@ function TeamAccessCard({
   }
 
   return (
+    <>
+    {confirmDlg && (
+      <ConfirmDialog
+        title={confirmDlg.title}
+        message={confirmDlg.message}
+        confirmLabel={confirmDlg.confirmLabel}
+        confirmTone={confirmDlg.confirmTone}
+        onConfirm={async () => { await confirmDlg.onConfirm(); setConfirmDlg(null); }}
+        onCancel={() => setConfirmDlg(null)}
+      />
+    )}
     <Card title="Team access" icon={<Users className="w-4 h-4 text-accent-700" />}
       desc="Manage admins and coaches. Admins can manage settings; coaches can log calls and view students."
     >
@@ -415,6 +456,7 @@ function TeamAccessCard({
         </div>
       )}
     </Card>
+    </>
   );
 }
 
@@ -579,5 +621,49 @@ function SecretField({
         </button>
       </div>
     </label>
+  );
+}
+
+function ConfirmDialog({
+  title, message, confirmLabel, confirmTone, onConfirm, onCancel,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmTone: 'danger' | 'normal';
+  onConfirm: () => Promise<void> | void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center px-4">
+      <div
+        onClick={onCancel}
+        className="absolute inset-0 bg-ink-950/40 backdrop-blur-[2px]"
+      />
+      <div className="relative bg-white rounded-2xl shadow-pop w-full max-w-[440px] overflow-hidden">
+        <div className="p-6">
+          <div className="text-[17px] font-semibold tracking-tight mb-2">{title}</div>
+          <div className="text-[13.5px] text-ink-600 leading-relaxed mb-6">{message}</div>
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              onClick={onCancel}
+              className="h-9 px-4 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => onConfirm()}
+              className={
+                confirmTone === 'danger'
+                  ? 'h-9 px-4 rounded-lg bg-rose-600 text-white text-[13px] font-medium hover:bg-rose-700'
+                  : 'h-9 px-4 rounded-lg btn-primary text-[13px] font-medium'
+              }
+            >
+              {confirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

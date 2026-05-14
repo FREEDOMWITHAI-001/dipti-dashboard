@@ -111,13 +111,25 @@ export function CallsTab({ studentId }: { studentId: string }) {
     });
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
+
+    // Immediately refetch calls so callsCount bumps and BriefingCard
+    // auto-regenerates. Don't rely on realtime alone — Supabase realtime
+    // requires the call_logs table to be in the publication, which may
+    // not be enabled.
+    const { data: fresh } = await sb
+      .from('call_logs')
+      .select('*, coach:profiles(display_name, initials)')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+    setCalls((fresh ?? []) as Call[]);
+
     // Reset composer including next-action picker
     setComment('');
     setOutcome(null);
     setNextAction('');
     setNextDue('');
     setNextOpen(false);
-    toast('Call logged', 'success');
+    toast('Call logged · AI briefing updating…', 'success');
   }
  
   // Label that summarises what's set in the next-action picker

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, RefreshCw, Copy, Info, ChevronUp, ChevronDown } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
@@ -15,9 +15,7 @@ type State = {
   provider?: string | null;
 };
 
-// Friendly name for the footer "powered by …" text.
 function providerLabel(model: string | null | undefined, provider: string | null | undefined): string {
-  // Prefer the human label derived from the model name when available.
   const m = (model ?? '').toLowerCase();
   if (m.includes('haiku'))    return 'Claude Haiku';
   if (m.includes('sonnet'))   return 'Claude Sonnet';
@@ -25,8 +23,7 @@ function providerLabel(model: string | null | undefined, provider: string | null
   if (m.includes('gpt-4o'))   return 'GPT-4o';
   if (m.includes('gpt-4'))    return 'GPT-4';
   if (m.includes('gemini'))   return 'Gemini';
-  if (m.includes('llama'))    return 'Llama 3.1';
-  // Fall back to the provider field stored at generation time.
+  if (m.includes('llama'))    return 'Llama 3.3';
   switch ((provider ?? '').toLowerCase()) {
     case 'openai':     return 'OpenAI';
     case 'anthropic':  return 'Claude';
@@ -44,6 +41,8 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
+  // Auto-regenerates briefing when callsCount changes (new call logged).
+  // No more need to navigate away and come back!
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -52,14 +51,29 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
         .select('summary_md, is_stale, source_calls_count, generated_at, model, provider')
         .eq('student_id', studentId)
         .maybeSingle();
-      if (!cancel) {
-        if (!data || data.is_stale) regenerate();
-        else setState(data as State);
+      if (cancel) return;
+
+      const briefing = data as State | null;
+      const briefingCallsCount = briefing?.source_calls_count ?? -1;
+
+      // Regenerate when:
+      //   1. No briefing exists yet
+      //   2. Briefing marked stale
+      //   3. New calls were logged since the briefing was generated
+      const needsRegen =
+        !briefing ||
+        briefing.is_stale ||
+        briefingCallsCount !== callsCount;
+
+      if (needsRegen) {
+        regenerate();
+      } else {
+        setState(briefing);
       }
     })();
     return () => { cancel = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [studentId]);
+  }, [studentId, callsCount]);
 
   async function regenerate() {
     setLoading(true);
@@ -109,7 +123,11 @@ export function BriefingCard({ studentId, callsCount }: { studentId: string; cal
           <div>
             <div className="font-semibold text-[14px] tracking-tight">AI Briefing</div>
             <div className="text-[11.5px] text-ink-500">
-              {state?.source_calls_count ? `Based on ${state.source_calls_count} calls` : 'Generating…'} · regenerated just now
+              {loading
+                ? 'Regenerating…'
+                : (state?.source_calls_count
+                    ? `Based on ${state.source_calls_count} call${state.source_calls_count > 1 ? 's' : ''}`
+                    : 'Generating…')} · regenerated just now
             </div>
           </div>
         </div>
@@ -159,7 +177,6 @@ function BriefingSkeleton() {
   );
 }
 
-// Light markdown renderer — handles ## headings, - bullets, paragraphs.
 function RenderBriefingMarkdown({ md }: { md: string }) {
   const blocks: Array<{ type: 'h2' | 'p' | 'ul'; content: string | string[] }> = [];
   let currentList: string[] | null = null;
