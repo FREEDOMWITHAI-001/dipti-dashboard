@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { UploadCloud, DownloadCloud, Plus, X, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -164,7 +164,28 @@ function PullFromGhlModal({ onClose, onDone }: { onClose: () => void; onDone: ()
   const { toast } = useToast();
   const [tag, setTag] = useState('Diamond');
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<'idle' | 'connecting' | 'fetching' | 'importing' | 'done'>('idle');
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [result, setResult] = useState<{ imported: number; updated: number } | null>(null);
+
+  // Tick the elapsed timer every second while busy.
+  useEffect(() => {
+    if (!busy) return;
+    setElapsedSec(0);
+    const start = Date.now();
+    const t = setInterval(() => setElapsedSec(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [busy]);
+
+  // Cycle through stages so the user sees movement even though we only get
+  // one response. Stages auto-advance based on time so it feels alive.
+  useEffect(() => {
+    if (!busy) { setStage('idle'); return; }
+    setStage('connecting');
+    const t1 = setTimeout(() => setStage('fetching'), 800);
+    const t2 = setTimeout(() => setStage('importing'), 2500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [busy]);
 
   async function run() {
     if (!tag.trim()) { toast('Tag is required.', 'error'); return; }
@@ -180,10 +201,12 @@ function PullFromGhlModal({ onClose, onDone }: { onClose: () => void; onDone: ()
         if (text.toLowerCase().includes('ghl_pit_token') || text.toLowerCase().includes('unauthorized') || text.toLowerCase().includes('token')) {
           toast('GHL token not configured. Open Settings → GoHighLevel to add it.', 'error');
         } else toast(text || 'Pull failed.', 'error');
+        setBusy(false);
         return;
       }
       const data = JSON.parse(text);
       setResult({ imported: data.imported ?? 0, updated: data.updated ?? 0 });
+      setStage('done');
       toast(`Imported ${data.imported ?? 0} · Updated ${data.updated ?? 0}`, 'success');
       onDone();
     } catch (e: any) {
@@ -191,26 +214,111 @@ function PullFromGhlModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     } finally { setBusy(false); }
   }
 
+  function reset() {
+    setResult(null);
+    setStage('idle');
+  }
+
   return (
     <ModalShell title="Pull from GoHighLevel" onClose={onClose}>
       <div className="p-5 space-y-4">
-        <p className="text-[12.5px] text-ink-500">
-          Imports all GHL contacts that carry the tag below. Existing students (matched by email) are updated; new ones are inserted. Safe to re-run.
-        </p>
-        <label className="block">
-          <div className="text-[12px] font-medium text-ink-700 mb-1">GHL tag</div>
-          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Diamond" className={fieldCls} disabled={busy} autoFocus />
-          <div className="text-[11px] text-ink-500 mt-1">Try tags like <span className="font-mono">Diamond</span>, <span className="font-mono">SH</span>, <span className="font-mono">BBR2</span>.</div>
-        </label>
-        {result && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-[12.5px] text-emerald-800">✓ {result.imported} new · {result.updated} updated.</div>}
+        {!busy && !result && (
+          <>
+            <p className="text-[12.5px] text-ink-500">
+              Imports all GHL contacts that carry the tag below. Existing students (matched by email) are updated; new ones are inserted. Safe to re-run.
+            </p>
+            <label className="block">
+              <div className="text-[12px] font-medium text-ink-700 mb-1">GHL tag</div>
+              <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Diamond" className={fieldCls} autoFocus />
+              <div className="text-[11px] text-ink-500 mt-1">Try tags like <span className="font-mono">Diamond</span>, <span className="font-mono">SH</span>, <span className="font-mono">BBR2</span>.</div>
+            </label>
+          </>
+        )}
+
+        {busy && (
+          <div className="py-6 px-2">
+            <div className="flex items-center justify-center mb-5">
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 rounded-full border-4 border-accent-100" />
+                <div className="absolute inset-0 rounded-full border-4 border-accent-500 border-t-transparent animate-spin" />
+              </div>
+            </div>
+            <div className="text-center mb-4">
+              <div className="text-[15px] font-semibold text-ink-900 mb-1">Pulling from GoHighLevel</div>
+              <div className="text-[12px] text-ink-500">Tag: <span className="font-mono">{tag}</span> · {elapsedSec}s elapsed</div>
+            </div>
+            <div className="space-y-2">
+              <StageRow active={stage === 'connecting'} done={['fetching', 'importing'].includes(stage)} label="Connecting to GHL" />
+              <StageRow active={stage === 'fetching'} done={stage === 'importing'} label="Fetching contacts" />
+              <StageRow active={stage === 'importing'} done={false} label="Saving to dashboard" />
+            </div>
+            <p className="text-[11px] text-ink-400 text-center mt-5">
+              This can take 30 seconds to 3 minutes depending on how many contacts. Don't close this window.
+            </p>
+          </div>
+        )}
+
+        {result && !busy && (
+          <div className="py-6 px-2 text-center">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 grid place-items-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div className="text-[18px] font-semibold text-ink-900 mb-2">Done!</div>
+            <div className="text-[13.5px] text-ink-600 mb-5">
+              Successfully synced <span className="font-semibold">{result.imported + result.updated}</span> students with GHL
+            </div>
+            <div className="flex items-center justify-center gap-6 text-[13px] mb-2">
+              <div>
+                <div className="text-emerald-600 font-semibold text-[20px]">{result.imported}</div>
+                <div className="text-ink-500 text-[11px] uppercase tracking-wider">New</div>
+              </div>
+              <div className="w-px h-10 bg-ink-200" />
+              <div>
+                <div className="text-accent-600 font-semibold text-[20px]">{result.updated}</div>
+                <div className="text-ink-500 text-[11px] uppercase tracking-wider">Updated</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-end gap-2 pt-1">
-          <Button type="button" onClick={onClose} disabled={busy}>Close</Button>
-          <Button variant="primary" onClick={run} disabled={busy}>
-            {busy ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Pulling…</> : 'Pull now'}
-          </Button>
+          {result && !busy ? (
+            <>
+              <Button type="button" onClick={reset}>Pull another tag</Button>
+              <Button variant="primary" onClick={onClose}>Done</Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" onClick={onClose} disabled={busy}>Cancel</Button>
+              <Button variant="primary" onClick={run} disabled={busy}>
+                {busy ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Pulling…</> : 'Pull now'}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </ModalShell>
+  );
+}
+
+function StageRow({ active, done, label }: { active: boolean; done: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className={
+        done ? 'w-5 h-5 rounded-full bg-emerald-500 grid place-items-center' :
+        active ? 'w-5 h-5 rounded-full border-2 border-accent-500 border-t-transparent animate-spin' :
+        'w-5 h-5 rounded-full border-2 border-ink-200'
+      }>
+        {done && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>}
+      </div>
+      <div className={
+        done ? 'text-[13px] text-ink-800 font-medium' :
+        active ? 'text-[13px] text-accent-700 font-medium' :
+        'text-[13px] text-ink-400'
+      }>{label}</div>
+    </div>
   );
 }
 

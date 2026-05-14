@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Send, MessageCircle, Smartphone, Mail, ChevronDown } from 'lucide-react';
+import { X, Send, MessageCircle, Smartphone, Mail, Link as LinkIcon } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { StudentAvatar } from '@/components/ui/avatar';
@@ -22,6 +22,10 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
   const [channel, setChannel] = useState<Channel>('whatsapp');
   const [sending, setSending] = useState(false);
 
+  // Payment link is now editable per-send. Pre-fills from EMI's stored link
+  // if one exists; coaches can paste a different link for this send.
+  const [paymentLink, setPaymentLink] = useState('');
+
   useEffect(() => {
     if (!open) return;
     let cancel = false;
@@ -32,7 +36,11 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
           ? sb.from('emi_schedule').select('*').eq('id', emiId).maybeSingle()
           : sb.from('emi_schedule').select('*').eq('student_id', studentId).neq('status', 'paid').order('installment_no').limit(1).maybeSingle(),
       ]);
-      if (!cancel) { setStudent(s); setEmi(emiQ.data ?? null); }
+      if (!cancel) {
+        setStudent(s);
+        setEmi(emiQ.data ?? null);
+        setPaymentLink(emiQ.data?.payment_link ?? '');
+      }
     })();
     return () => { cancel = true; };
   }, [open, studentId, emiId, sb]);
@@ -40,13 +48,22 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
   if (!open) return null;
 
   const message = student && emi
-    ? `Hi ${student.first_name ?? 'there'}, your EMI of ${fmtINR(Number(emi.amount))} (${emi.installment_no}/${emi.installments_total}) is due on ${fmtDate(emi.due_date)}. Pay here: ${emi.payment_link ?? '[link]'}\n— Team DVA`
+    ? `Hi ${student.first_name ?? 'there'}, your EMI of ${fmtINR(Number(emi.amount))} (${emi.installment_no}/${emi.installments_total}) is due on ${fmtDate(emi.due_date)}. Pay here: ${paymentLink || '[link]'}\n— Team DVA`
     : '';
 
   async function send() {
     if (!student) return;
+    if (!paymentLink.trim()) {
+      toast('Please enter a payment link before sending', 'error');
+      return;
+    }
     setSending(true);
     try {
+      // Save the entered link to the EMI so future reminders default to it.
+      if (emi?.id && paymentLink !== emi.payment_link) {
+        await sb.from('emi_schedule').update({ payment_link: paymentLink }).eq('id', emi.id);
+      }
+
       const r = await fetch('/api/ghl/trigger-workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -60,7 +77,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
             email: student.email,
             phone: student.mobile,
             emi_amount: emi?.amount,
-            payment_link: emi?.payment_link ?? '',
+            payment_link: paymentLink.trim(),
             due_date: emi?.due_date,
             installment: emi ? `${emi.installment_no}/${emi.installments_total}` : '',
           },
@@ -112,11 +129,28 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
             </div>
           </Section>
 
-          <Section label="GHL Workflow">
-            <button className="h-10 px-3 w-full rounded-lg border border-ink-200 hover:bg-ink-50 text-left text-[13px] flex items-center justify-between">
-              <span><span className="font-medium">EMI Reminder · Diamond</span> <span className="text-ink-500">— wf_a3k9d</span></span>
-              <ChevronDown className="w-4 h-4 text-ink-500" />
-            </button>
+          {/* PAYMENT LINK INPUT */}
+          <Section label="Payment link">
+            <div className="relative">
+              <LinkIcon className="w-4 h-4 absolute left-3 top-3 text-ink-400" />
+              <input
+                type="url"
+                value={paymentLink}
+                onChange={(e) => setPaymentLink(e.target.value)}
+                placeholder="Paste payment link (Razorpay / UPI / etc)"
+                className="h-10 pl-9 pr-3 w-full text-[13px] bg-white border border-ink-200 hover:border-ink-300 focus:border-accent-400 focus:ring-2 focus:ring-accent-100 rounded-lg outline-none transition"
+                autoFocus
+              />
+            </div>
+            {emi?.payment_link && paymentLink === emi.payment_link && (
+              <div className="text-[11px] text-ink-400 mt-1.5">Loaded from this EMI's saved link · edit to change</div>
+            )}
+            {emi?.payment_link && paymentLink !== emi.payment_link && paymentLink.trim() && (
+              <div className="text-[11px] text-accent-700 mt-1.5">New link will be saved to this EMI for future reminders</div>
+            )}
+            {!emi?.payment_link && paymentLink.trim() && (
+              <div className="text-[11px] text-accent-700 mt-1.5">This link will be saved to the EMI for future reminders</div>
+            )}
           </Section>
 
           <Section label="Preview">
@@ -127,7 +161,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
 
           <div className="flex items-center gap-2 mt-6">
             <button onClick={onClose} className="h-10 px-4 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50">Cancel</button>
-            <button onClick={send} disabled={sending || !emi}
+            <button onClick={send} disabled={sending || !emi || !paymentLink.trim()}
               className="btn-primary ml-auto h-10 px-5 rounded-lg text-[13px] font-medium flex items-center gap-2 disabled:opacity-50">
               {sending ? 'Sending…' : <>Send via GHL <Send className="w-4 h-4" /></>}
             </button>
