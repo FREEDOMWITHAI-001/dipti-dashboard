@@ -8,12 +8,31 @@ export const dynamic = 'force-dynamic';
 
 type Filter = 'all' | 'active' | 'expiring' | 'expired';
 
+// Convert a timestamp to a short relative string like "3 d ago", "today", "yesterday".
+function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return 'just now';
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+// Format a date string to "12 May" (short).
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
 export default async function StudentsPage({ searchParams }: { searchParams: { filter?: string } }) {
   const sb = supabaseServer();
   const activeFilter = (searchParams?.filter ?? 'all') as Filter;
 
-  // Fetch ALL students (not just latest 50). Increased limit to 2000 so the
-  // entire Diamond roster loads. The table itself paginates client-side via
+  // Fetch ALL students (not just latest 50). 2000 ceiling lets the entire
+  // Diamond roster load. The table itself paginates client-side via
   // PAGE_SIZE in students-table.tsx, so the user still sees 10 at a time.
   const [{ data: students, count }, { count: overdueCount }, { data: dueAmount }] = await Promise.all([
     sb.from('students').select('*', { count: 'exact' }).is('deleted_at', null).order('created_at', { ascending: false }).limit(2000),
@@ -21,10 +40,9 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
     sb.from('emi_schedule').select('amount').eq('status', 'overdue'),
   ]);
 
-  // Build a map of {student_id -> most recent call_log.created_at}
-  // and {student_id -> most recent paid EMI {mode, date}} for the
-  // students we're about to display.
   const studentIds = (students ?? []).map((s: any) => s.id);
+  // Pre-format date strings server-side so the table cells stay short and
+  // don't overflow into the next column.
   const lastCallByStudent: Record<string, string> = {};
   const lastPaymentByStudent: Record<string, { mode: string; date: string }> = {};
 
@@ -37,7 +55,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
       .order('created_at', { ascending: false });
     for (const c of (calls ?? []) as any[]) {
       if (!lastCallByStudent[c.student_id]) {
-        lastCallByStudent[c.student_id] = c.created_at;
+        lastCallByStudent[c.student_id] = relativeTime(c.created_at);
       }
     }
 
@@ -51,7 +69,10 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
       .order('paid_date', { ascending: false });
     for (const e of (paidEmis ?? []) as any[]) {
       if (!lastPaymentByStudent[e.student_id] && e.payment_mode) {
-        lastPaymentByStudent[e.student_id] = { mode: e.payment_mode, date: e.paid_date };
+        lastPaymentByStudent[e.student_id] = {
+          mode: e.payment_mode,
+          date: shortDate(e.paid_date),
+        };
       }
     }
   }

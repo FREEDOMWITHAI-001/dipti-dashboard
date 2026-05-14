@@ -17,6 +17,10 @@ type InitialFilter = 'all' | StatusKey;
 const PAGE_SIZE = 10;
 const TAG_DISPLAY_LIMIT = 3;
 
+// Grid template — give Last call and Payment more breathing room so they
+// don't overlap. Used in both header and body rows; must match.
+const GRID_COLS = 'grid-cols-[36px_1.4fr_0.9fr_1fr_0.7fr_0.7fr_0.9fr_0.55fr]';
+
 export function StudentsTable({
   initialStudents,
   totalCount,
@@ -161,7 +165,7 @@ export function StudentsTable({
         </div>
       )}
 
-      <div className="grid grid-cols-[36px_1.5fr_0.9fr_0.9fr_0.7fr_0.8fr_0.9fr_0.5fr] gap-3 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100">
+      <div className={cn('grid gap-3 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100', GRID_COLS)}>
         <div />
         <div>Student</div>
         <div>Membership</div>
@@ -185,18 +189,18 @@ export function StudentsTable({
             <button
               key={s.id}
               onClick={() => openStudent(s.id)}
-              className="row-clickable w-full text-left grid grid-cols-[36px_1.5fr_0.9fr_0.9fr_0.7fr_0.8fr_0.9fr_0.5fr] gap-3 px-6 py-3.5 items-center border-b border-ink-100 last:border-0"
+              className={cn('row-clickable w-full text-left grid gap-3 px-6 py-3.5 items-center border-b border-ink-100 last:border-0', GRID_COLS)}
             >
               <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
-              <div className="min-w-0">
+              <div className="min-w-0 overflow-hidden">
                 <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
                 <div className="text-[11.5px] text-ink-500 truncate">{s.email}</div>
               </div>
-              <div className="text-[13px] min-w-0">
+              <div className="text-[13px] min-w-0 overflow-hidden">
                 <div className="text-ink-900 font-medium truncate">{s.membership ?? '—'}</div>
                 <div className="text-[11px] text-ink-500 truncate">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
               </div>
-              <div className="flex flex-wrap gap-1 items-center min-w-0">
+              <div className="flex flex-wrap gap-1 items-center min-w-0 overflow-hidden">
                 {totalTags === 0 && <span className="text-[11px] text-ink-400">—</span>}
                 {visibleTags.map((t) => (
                   <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 whitespace-nowrap">{t}</span>
@@ -210,20 +214,20 @@ export function StudentsTable({
                   </span>
                 )}
               </div>
-              <div className="text-[12.5px] min-w-0">
+              <div className="text-[12.5px] min-w-0 overflow-hidden">
                 <div className="font-medium truncate">{fmtDateShort(s.end_date)}</div>
                 <div className="text-[10.5px] text-ink-500 truncate">{
                   (() => {
                     const d = daysFromNow(s.end_date);
                     if (d === null) return '—';
                     if (d < 0) return 'expired';
-                    return `in ${d} d`;
+                    return `in ${d}d`;
                   })()
                 }</div>
               </div>
-              <div className="text-[12px] min-w-0">
+              <div className="text-[12px] min-w-0 overflow-hidden">
                 {lastCall ? (
-                  <div className="inline-flex items-center gap-1 text-ink-700">
+                  <div className="flex items-center gap-1 text-ink-700 min-w-0">
                     <Phone className="w-3 h-3 text-ink-400 flex-shrink-0" />
                     <span className="truncate">{lastCall}</span>
                   </div>
@@ -231,9 +235,9 @@ export function StudentsTable({
                   <span className="text-ink-400">—</span>
                 )}
               </div>
-              <div className="text-[12px] min-w-0">
+              <div className="text-[12px] min-w-0 overflow-hidden">
                 {lastPayment ? (
-                  <div className="inline-flex items-center gap-1 text-ink-700">
+                  <div className="flex items-center gap-1 text-ink-700 min-w-0">
                     <IndianRupee className="w-3 h-3 text-ink-400 flex-shrink-0" />
                     <span className="truncate">{lastPayment.mode} · {lastPayment.date}</span>
                   </div>
@@ -241,7 +245,7 @@ export function StudentsTable({
                   <span className="text-ink-400">—</span>
                 )}
               </div>
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-end min-w-0">
                 <StatusPill status={studentStatusFromEnd(s.end_date)} />
               </div>
             </button>
