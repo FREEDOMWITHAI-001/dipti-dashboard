@@ -1,16 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { X, Send, MessageCircle, Smartphone, Mail, Link as LinkIcon } from 'lucide-react';
+import { X, Send, Link as LinkIcon } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { StudentAvatar } from '@/components/ui/avatar';
-import { fmtINR, fmtDate, cn } from '@/lib/utils';
+import { fmtINR, fmtDate } from '@/lib/utils';
 import type { Database } from '@/types/database';
 
 type Student = Database['public']['Tables']['students']['Row'];
 type Emi = Database['public']['Tables']['emi_schedule']['Row'];
-type Channel = 'whatsapp' | 'sms' | 'email';
 
 export function ReminderModal({ open, onClose, studentId, emiId }: {
   open: boolean; onClose: () => void; studentId: string; emiId?: string;
@@ -19,11 +18,9 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
   const { toast } = useToast();
   const [student, setStudent] = useState<Student | null>(null);
   const [emi, setEmi] = useState<Emi | null>(null);
-  const [channel, setChannel] = useState<Channel>('whatsapp');
   const [sending, setSending] = useState(false);
 
-  // Payment link is now editable per-send. Pre-fills from EMI's stored link
-  // if one exists; coaches can paste a different link for this send.
+  // Payment link — editable per-send. Pre-fills from EMI's stored link.
   const [paymentLink, setPaymentLink] = useState('');
 
   useEffect(() => {
@@ -64,13 +61,15 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
         await sb.from('emi_schedule').update({ payment_link: paymentLink }).eq('id', emi.id);
       }
 
+      // GHL workflow handles both WhatsApp + Email automatically.
+      // We always pass channel='whatsapp' as a default for the reminder log.
       const r = await fetch('/api/ghl/trigger-workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId: student.id,
           emiId: emi?.id ?? null,
-          channel,
+          channel: 'whatsapp',
           payload: {
             first_name: student.first_name,
             last_name: student.last_name,
@@ -84,7 +83,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
         }),
       });
       if (!r.ok) throw new Error(await r.text());
-      toast('Reminder sent · GHL workflow triggered', 'success');
+      toast('Reminder sent · WhatsApp + Email', 'success');
       onClose();
     } catch (e: any) {
       toast(e.message ?? 'Failed', 'error');
@@ -100,7 +99,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
           <div className="flex items-start justify-between mb-5">
             <div>
               <div className="text-[18px] font-semibold tracking-tight">Send reminder</div>
-              <div className="text-[12.5px] text-ink-500 mt-0.5">via GoHighLevel · routes to student's preferred channel</div>
+              <div className="text-[12.5px] text-ink-500 mt-0.5">via GoHighLevel · sends WhatsApp + Email together</div>
             </div>
             <button onClick={onClose} className="w-8 h-8 rounded-md hover:bg-ink-100 grid place-items-center"><X className="w-4 h-4" /></button>
           </div>
@@ -121,15 +120,6 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
             </div>
           )}
 
-          <Section label="Channel">
-            <div className="grid grid-cols-3 gap-2">
-              <ChannelBtn val="whatsapp" current={channel} onClick={setChannel} icon={<MessageCircle className="w-4 h-4" />} label="WhatsApp" />
-              <ChannelBtn val="sms"      current={channel} onClick={setChannel} icon={<Smartphone className="w-4 h-4" />} label="SMS" />
-              <ChannelBtn val="email"    current={channel} onClick={setChannel} icon={<Mail className="w-4 h-4" />} label="Email" />
-            </div>
-          </Section>
-
-          {/* PAYMENT LINK INPUT */}
           <Section label="Payment link">
             <div className="relative">
               <LinkIcon className="w-4 h-4 absolute left-3 top-3 text-ink-400" />
@@ -157,13 +147,14 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
             <div className="bg-emerald-50/30 border border-emerald-100 rounded-xl p-3.5 text-[13px] leading-relaxed whitespace-pre-line text-ink-800">
               {message || <span className="text-ink-400">No EMI on file.</span>}
             </div>
+            <div className="text-[11px] text-ink-400 mt-1.5">Same message goes to WhatsApp + Email together</div>
           </Section>
 
           <div className="flex items-center gap-2 mt-6">
             <button onClick={onClose} className="h-10 px-4 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50">Cancel</button>
             <button onClick={send} disabled={sending || !emi || !paymentLink.trim()}
               className="btn-primary ml-auto h-10 px-5 rounded-lg text-[13px] font-medium flex items-center gap-2 disabled:opacity-50">
-              {sending ? 'Sending…' : <>Send via GHL <Send className="w-4 h-4" /></>}
+              {sending ? 'Sending…' : <>Send reminder <Send className="w-4 h-4" /></>}
             </button>
           </div>
         </div>
@@ -178,17 +169,5 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <div className="text-[11.5px] uppercase tracking-wider font-semibold text-ink-500 mb-2">{label}</div>
       {children}
     </div>
-  );
-}
-
-function ChannelBtn({ val, current, onClick, icon, label }: { val: Channel; current: Channel; onClick: (v: Channel) => void; icon: React.ReactNode; label: string }) {
-  const sel = current === val;
-  return (
-    <button onClick={() => onClick(val)} className={cn(
-      'h-10 rounded-lg text-[13px] font-medium flex items-center justify-center gap-2',
-      sel ? 'border-2 border-accent-500 bg-accent-50/40 text-accent-700' : 'border border-ink-200 hover:bg-ink-50'
-    )}>
-      {icon} {label}
-    </button>
   );
 }
