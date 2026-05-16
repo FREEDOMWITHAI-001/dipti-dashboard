@@ -1,7 +1,7 @@
 'use client';
  
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CornerDownLeft, CalendarPlus, X } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, CalendarPlus, X, ImagePlus, Loader2 } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { CoachAvatar } from '@/components/ui/avatar';
@@ -31,6 +31,7 @@ export function CallsTab({ studentId }: { studentId: string }) {
   const { toast } = useToast();
   const [calls, setCalls] = useState<Call[]>([]);
   const [comment, setComment] = useState('');
+  const [extracting, setExtracting] = useState(false);
   const [outcome, setOutcome] = useState<Call['outcome']>(null);
   const [saving, setSaving] = useState(false);
   const [presence, setPresence] = useState<string[]>([]);
@@ -112,10 +113,7 @@ export function CallsTab({ studentId }: { studentId: string }) {
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
 
-    // Immediately refetch calls so callsCount bumps and BriefingCard
-    // auto-regenerates. Don't rely on realtime alone — Supabase realtime
-    // requires the call_logs table to be in the publication, which may
-    // not be enabled.
+    // Immediately refetch so AI briefing auto-regenerates.
     const { data: fresh } = await sb
       .from('call_logs')
       .select('*, coach:profiles(display_name, initials)')
@@ -123,13 +121,59 @@ export function CallsTab({ studentId }: { studentId: string }) {
       .order('created_at', { ascending: false });
     setCalls((fresh ?? []) as Call[]);
 
-    // Reset composer including next-action picker
     setComment('');
     setOutcome(null);
     setNextAction('');
     setNextDue('');
     setNextOpen(false);
     toast('Call logged · AI briefing updating…', 'success');
+  }
+
+  async function extractChat(file: File) {
+    setExtracting(true);
+    try {
+      const reader = new FileReader();
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/chat-extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          mimeType: file.type || 'image/jpeg',
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Extraction failed');
+      }
+      const { text } = await res.json();
+      setComment((c) =>
+        (c ? c + '\n\n--- From chat screenshot ---\n' : '--- From chat screenshot ---\n') + text
+      );
+      toast('Chat extracted · review and Save', 'success');
+    } catch (e: any) {
+      toast(e.message ?? 'Failed to extract chat', 'error');
+    }
+    setExtracting(false);
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          extractChat(file);
+          return;
+        }
+      }
+    }
   }
  
   // Label that summarises what's set in the next-action picker
@@ -164,7 +208,7 @@ export function CallsTab({ studentId }: { studentId: string }) {
         <div className="text-[12px] uppercase tracking-wider font-semibold text-ink-500 mb-2.5">Log a call</div>
         <textarea
           rows={3}
-          value={comment} onChange={(e) => setComment(e.target.value)}
+          value={comment} onChange={(e) => setComment(e.target.value)} onPaste={handlePaste}
           placeholder="How did the call go?"
           className="w-full text-[13.5px] leading-relaxed outline-none resize-none placeholder:text-ink-400"
         />
@@ -196,6 +240,17 @@ export function CallsTab({ studentId }: { studentId: string }) {
           </button>
  
           <VoiceButton onTranscript={(text) => setComment((c) => (c ? c + '\n\n' : '') + text)} />
+          <label className="h-8 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1 cursor-pointer">
+            {extracting ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
+            {extracting ? 'Reading…' : 'Paste chat'}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={extracting}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) extractChat(f); e.target.value = ''; }}
+            />
+          </label>
           <button
             disabled={saving || !comment.trim()} onClick={save}
             className="ml-auto btn-primary h-8 px-3 rounded-md text-[12px] font-medium flex items-center gap-1.5 disabled:opacity-50"
