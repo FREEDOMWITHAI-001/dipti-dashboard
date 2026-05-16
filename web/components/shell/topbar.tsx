@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Bell, Moon, Sun, Search, Settings, LogOut, ChevronDown, TriangleAlert, Clock, UserX, CheckCircle2 } from 'lucide-react';
+import { Bell, Moon, Sun, Search, Settings, LogOut, ChevronDown, TriangleAlert, Clock, UserX, CheckCircle2, CalendarClock, ArrowRight } from 'lucide-react';
 import { cn, fmtINR } from '@/lib/utils';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useTheme } from '@/components/shell/theme-provider';
@@ -25,15 +25,26 @@ function avClassForInitials(initials: string): string {
   return PRESETS[sum % PRESETS.length];
 }
 
+type FollowupItem = {
+  id: string;
+  student_id: string;
+  student_name: string;
+  next_action: string;
+};
+
 type Notifs = {
   overdueCount: number;
   overdueAmount: number;
   followupsCount: number;
+  followupItems: FollowupItem[];
   silentCount: number;
   expiringCount: number;
 };
 
-const EMPTY: Notifs = { overdueCount: 0, overdueAmount: 0, followupsCount: 0, silentCount: 0, expiringCount: 0 };
+const EMPTY: Notifs = {
+  overdueCount: 0, overdueAmount: 0, followupsCount: 0, followupItems: [],
+  silentCount: 0, expiringCount: 0,
+};
 
 export function Topbar({ user }: { user: SessionUser }) {
   const router = useRouter();
@@ -59,14 +70,19 @@ export function Topbar({ user }: { user: SessionUser }) {
     return () => document.removeEventListener('mousedown', onClick);
   }, [menuOpen, bellOpen]);
 
-  // Load notifications on mount + whenever bell opens
   async function refresh() {
     setLoading(true);
     const today = new Date().toISOString().slice(0, 10);
     try {
-      const [overdueRows, followupsCount, silentCount, expiringSoon] = await Promise.all([
+      const [overdueRows, followupsQuery, silentCount, expiringSoon] = await Promise.all([
         sb.from('emi_schedule').select('amount').eq('status', 'overdue'),
-        sb.from('call_logs').select('id', { count: 'exact', head: true }).eq('next_action_due', today),
+        // Include overdue follow-ups too (anything due today or before)
+        sb.from('call_logs')
+          .select('id, student_id, next_action, next_action_due, student:students(first_name, last_name)')
+          .lte('next_action_due', today)
+          .not('next_action', 'is', null)
+          .order('next_action_due', { ascending: false })
+          .limit(20),
         sb.from('v_students_silent_30d').select('id', { count: 'exact', head: true }),
         sb.from('students')
           .select('id', { count: 'exact', head: true })
@@ -75,10 +91,21 @@ export function Topbar({ user }: { user: SessionUser }) {
           .is('deleted_at', null),
       ]);
       const rows = (overdueRows.data ?? []) as any[];
+      const followupRows = (followupsQuery.data ?? []) as any[];
+      const followupItems: FollowupItem[] = followupRows.map((r: any) => ({
+        id: r.id,
+        student_id: r.student_id,
+        student_name: r.student
+          ? `${r.student.first_name ?? ''} ${r.student.last_name ?? ''}`.trim()
+          : 'Unknown',
+        next_action: r.next_action ?? '',
+      }));
+
       setNotifs({
         overdueCount: rows.length,
         overdueAmount: rows.reduce((s, r) => s + Number(r.amount ?? 0), 0),
-        followupsCount: followupsCount.count ?? 0,
+        followupsCount: followupItems.length,
+        followupItems,
         silentCount: silentCount.count ?? 0,
         expiringCount: expiringSoon.count ?? 0,
       });
@@ -134,8 +161,8 @@ export function Topbar({ user }: { user: SessionUser }) {
           </button>
 
           {bellOpen && (
-            <div className="absolute right-0 top-[calc(100%+6px)] w-[340px] bg-white border border-ink-200/80 shadow-pop rounded-xl overflow-hidden z-50">
-              <div className="px-4 py-3 border-b border-ink-100 flex items-center justify-between">
+            <div className="absolute right-0 top-[calc(100%+6px)] w-[380px] bg-white border border-ink-200/80 shadow-pop rounded-xl overflow-hidden z-50 max-h-[80vh] overflow-y-auto">
+              <div className="px-4 py-3 border-b border-ink-100 flex items-center justify-between sticky top-0 bg-white">
                 <div className="font-semibold text-[13.5px]">Notifications</div>
                 <button onClick={refresh} className="text-[11px] text-ink-500 hover:text-ink-800" disabled={loading}>
                   {loading ? 'Refreshing…' : 'Refresh'}
@@ -149,6 +176,44 @@ export function Topbar({ user }: { user: SessionUser }) {
                 </div>
               ) : (
                 <div className="divide-y divide-ink-100">
+                  {/* FOLLOW-UPS — show inline with student names */}
+                  {notifs.followupItems.length > 0 && (
+                    <div>
+                      <div className="px-4 pt-3 pb-2 flex items-center gap-2 bg-amber-50/50">
+                        <CalendarClock className="w-3.5 h-3.5 text-amber-700" />
+                        <div className="text-[11.5px] font-semibold uppercase tracking-wider text-amber-800">
+                          Follow-ups due ({notifs.followupItems.length})
+                        </div>
+                      </div>
+                      {notifs.followupItems.slice(0, 5).map((f) => (
+                        <Link
+                          key={f.id}
+                          href={`/students?student=${f.student_id}` as any}
+                          onClick={() => setBellOpen(false)}
+                          className="flex items-start gap-3 px-4 py-2.5 hover:bg-amber-50/30 border-b border-ink-50 last:border-0"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-amber-100 grid place-items-center shrink-0 text-[10px] font-semibold text-amber-800">
+                            {f.student_name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?'}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[12.5px] font-medium text-ink-900 truncate">{f.student_name}</div>
+                            <div className="text-[11.5px] text-ink-600 line-clamp-2 leading-snug">→ {f.next_action}</div>
+                          </div>
+                          <ArrowRight className="w-3.5 h-3.5 text-ink-400 mt-1 shrink-0" />
+                        </Link>
+                      ))}
+                      {notifs.followupItems.length > 5 && (
+                        <Link
+                          href={'/follow-ups' as any}
+                          onClick={() => setBellOpen(false)}
+                          className="block px-4 py-2 text-[11.5px] text-accent-700 hover:bg-amber-50/30 font-medium text-center border-b border-ink-50"
+                        >
+                          See all {notifs.followupItems.length} follow-ups →
+                        </Link>
+                      )}
+                    </div>
+                  )}
+
                   {notifs.overdueCount > 0 && (
                     <NotifRow
                       href="/emi?tab=overdue"
@@ -156,16 +221,6 @@ export function Topbar({ user }: { user: SessionUser }) {
                       iconBg="bg-rose-50"
                       title={`${notifs.overdueCount} overdue EMI${notifs.overdueCount > 1 ? 's' : ''}`}
                       sub={fmtINR(notifs.overdueAmount) + ' to collect'}
-                      onClick={() => setBellOpen(false)}
-                    />
-                  )}
-                  {notifs.followupsCount > 0 && (
-                    <NotifRow
-                      href="/calls"
-                      icon={<Clock className="w-4 h-4 text-amber-700" />}
-                      iconBg="bg-amber-50"
-                      title={`${notifs.followupsCount} follow-up${notifs.followupsCount > 1 ? 's' : ''} due today`}
-                      sub="Promised calls to make"
                       onClick={() => setBellOpen(false)}
                     />
                   )}
@@ -192,8 +247,8 @@ export function Topbar({ user }: { user: SessionUser }) {
                 </div>
               )}
 
-              <div className="border-t border-ink-100 px-4 py-2 text-[11px] text-ink-500 bg-ink-50/40">
-                Auto-reminders fire at 09:00 IST · GHL handles delivery
+              <div className="border-t border-ink-100 px-4 py-2 text-[11px] text-ink-500 bg-ink-50/40 sticky bottom-0">
+                Coach reminders are shown here · EMI WhatsApp goes via GHL
               </div>
             </div>
           )}

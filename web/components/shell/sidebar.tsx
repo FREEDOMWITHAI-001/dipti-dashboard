@@ -1,11 +1,10 @@
-
 'use client';
  
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   UsersRound, IndianRupee, BellRing, Phone, LineChart, Settings2, Link2,
-  ChevronUp, MessageSquare,
+  ChevronUp, MessageSquare, CalendarClock, TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
  
@@ -19,12 +18,14 @@ type SessionUser = {
 type Badges = { emi: number; calls: number };
  
 const NAV: Array<{ href: string; label: string; icon: any; badgeKey?: keyof Badges; tone?: 'risk' | 'muted' }> = [
-  { href: '/students',  label: 'Students',     icon: UsersRound },
-  { href: '/emi',       label: 'EMI Tracker',  icon: IndianRupee, badgeKey: 'emi',   tone: 'risk' },
-  { href: '/reminders', label: 'Reminders',    icon: BellRing },
-  { href: '/calls',     label: 'Call Queue',   icon: Phone,       badgeKey: 'calls', tone: 'muted' },
-  { href: '/comments',  label: 'Comments',     icon: MessageSquare },
-  { href: '/reports',   label: 'Reports',      icon: LineChart },
+  { href: '/students',   label: 'Students',     icon: UsersRound },
+  { href: '/emi',        label: 'EMI Tracker',  icon: IndianRupee, badgeKey: 'emi',   tone: 'risk' },
+  { href: '/progress',   label: 'Progress',     icon: TrendingUp },
+  { href: '/follow-ups', label: 'Follow-ups',   icon: CalendarClock },
+  { href: '/reminders',  label: 'Reminders',    icon: BellRing },
+  { href: '/calls',      label: 'Call Queue',   icon: Phone,       badgeKey: 'calls', tone: 'muted' },
+  { href: '/comments',   label: 'Comments',     icon: MessageSquare },
+  { href: '/reports',    label: 'Reports',      icon: LineChart },
 ];
  
 export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges }) {

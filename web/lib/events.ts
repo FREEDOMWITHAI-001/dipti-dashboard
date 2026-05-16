@@ -1,12 +1,4 @@
 // Reminder dispatch + sweep helpers used by cron routes and manual trigger API.
-//
-// Webhook payload field names match the GHL workflow's Create Contact node:
-//   - emi_amount     → {{inboundWebhookRequest.emi_amount}}     → saved to contact.diamond_emi_amount
-//   - payment_link   → {{inboundWebhookRequest.payment_link}}   → saved to contact.diamond_emi_payment_link
-//   - due_date       → {{inboundWebhookRequest.due_date}}       → saved to contact.due_date
-//   - first_name, last_name, email, phone → standard contact fields
-//
-// Then WhatsApp template uses {{contact.diamond_emi_amount}} etc.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { ghlTriggerWorkflow, GhlError } from '@/lib/ghl/client';
@@ -95,8 +87,7 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
         first_name: r.first_name,
         last_name: r.last_name,
         phone: normalizePhone(r.mobile),
-        emi_amount: r.amount,
-        payment_link: r.payment_link ?? '',
+        amount: r.amount,
         due_date: r.due_date,
         installment: `${r.installment_no}/${r.installments_total}`,
       },
@@ -122,8 +113,7 @@ export async function sweepEmiOverdue(sb: AnyClient, workflowId: string | null):
         first_name: r.first_name,
         last_name: r.last_name,
         phone: normalizePhone(r.mobile),
-        emi_amount: r.amount,
-        payment_link: r.payment_link ?? '',
+        amount: r.amount,
         due_date: r.due_date,
       },
       triggeredBy: null,
@@ -148,6 +138,53 @@ export async function sweepSilentStudents(sb: AnyClient, workflowId: string | nu
         last_name: r.last_name,
         phone: normalizePhone(r.mobile),
         last_touch: r.last_touch,
+      },
+      triggeredBy: null,
+    });
+    if (out.ok) fired++;
+  }
+  return fired;
+}
+
+// Sweep follow-ups whose next_action_due hits TODAY. Fires a WhatsApp to the
+// student via the configured GHL workflow. Deduped via the reminders table —
+// a follow-up that already has a "sent" reminder won't re-fire.
+export async function sweepFollowupsDue(sb: AnyClient, workflowId: string | null): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: rows } = await sb
+    .from('call_logs')
+    .select(`
+      id, student_id, next_action, next_action_due,
+      student:students(first_name, last_name, email, mobile, ghl_contact_id)
+    `)
+    .eq('next_action_due', today)
+    .not('next_action', 'is', null);
+
+  let fired = 0;
+  for (const r of (rows ?? []) as any[]) {
+    if (!r.student) continue;
+
+    // Skip if already fired for this call_log id
+    const dup = await sb.from('reminders').select('id')
+      .eq('event_id', 'student.followup_due')
+      .contains('payload', { call_log_id: r.id })
+      .in('status', ['queued', 'sent', 'delivered'])
+      .maybeSingle();
+    if (dup.data) continue;
+
+    const out = await dispatchReminder(sb, {
+      event: 'student.followup_due',
+      studentId: r.student_id,
+      ghlContactId: r.student.ghl_contact_id ?? null,
+      workflowId,
+      payload: {
+        email: r.student.email,
+        first_name: r.student.first_name,
+        last_name: r.student.last_name,
+        phone: normalizePhone(r.student.mobile),
+        next_action: r.next_action,
+        due_date: r.next_action_due,
+        call_log_id: r.id,
       },
       triggeredBy: null,
     });
