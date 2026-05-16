@@ -1,30 +1,32 @@
-import { supabaseServer } from '@/lib/supabase/server';
-import { ProgressClient } from './progress-client';
+import { NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { sweepEmiRemindersDue, sweepSilentStudents, sweepFollowupsDue } from '@/lib/events';
 
-export const dynamic = 'force-dynamic';
+// Vercel Cron 09:00 IST  → UTC 03:30
+export const runtime = 'nodejs';
+export const maxDuration = 60;
 
-export default async function ProgressPage() {
-  const sb = supabaseServer();
+export async function GET(req: Request) {
+  const auth = req.headers.get('authorization');
+  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (req.headers.get('user-agent') !== 'vercel-cron/1.0') {
+      return new NextResponse('forbidden', { status: 403 });
+    }
+  }
 
-  const { data: students } = await sb
-    .from('students')
-    .select('id, first_name, last_name, email, start_date, end_date, month_1, month_2, month_3, month_4, month_5, month_6, membership')
-    .is('deleted_at', null)
-    .order('start_date', { ascending: false })
-    .limit(2000);
+  const sb = supabaseAdmin();
+  await sb.rpc('refresh_emi_statuses' as any);
 
-  const safe = (students ?? []) as any[];
+  const wf = async (id: string) => (await sb.from('reminder_events').select('default_workflow_id, enabled').eq('id', id).maybeSingle()).data;
 
-  return (
-    <div className="px-7 py-7 max-w-[1200px]">
-      <div className="mb-8">
-        <h1 className="text-[26px] font-semibold tracking-tight leading-tight text-ink-900">Course Progress</h1>
-        <p className="text-[13.5px] text-ink-500 mt-1.5">
-          Students bucketed by joining date. Click any month to see who's stuck.
-        </p>
-      </div>
+  const emiCfg      = await wf('emi.reminder_due');
+  const silentCfg   = await wf('student.no_call_30d');
+  const followupCfg = await wf('student.followup_due');
 
-      <ProgressClient students={safe} />
-    </div>
-  );
+  let fired = 0;
+  if (emiCfg?.enabled)      fired += await sweepEmiRemindersDue(sb, emiCfg.default_workflow_id ?? null);
+  if (silentCfg?.enabled)   fired += await sweepSilentStudents(sb, silentCfg.default_workflow_id ?? null);
+  if (followupCfg?.enabled) fired += await sweepFollowupsDue(sb, followupCfg.default_workflow_id ?? null);
+
+  return NextResponse.json({ ok: true, fired });
 }
