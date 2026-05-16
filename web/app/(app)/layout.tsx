@@ -15,13 +15,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     sb.from('v_students_silent_30d').select('id', { count: 'exact', head: true }),
   ]);
 
-  let profile: { display_name: string; initials: string; role: string } | null = null;
+  let profile: { display_name: string; initials: string; role: string; permissions: string[] } | null = null;
   if (user) {
-    const { data } = await sb.from('profiles').select('display_name, initials, role').eq('id', user.id).maybeSingle();
+    const { data } = await sb.from('profiles').select('display_name, initials, role, permissions').eq('id', user.id).maybeSingle();
     profile = (data as any) ?? null;
-    // Auto-create a stub profile if the trigger never ran (user predates it,
-    // or trigger failed). Without this the user would be silently treated as
-    // a coach with placeholder initials, which is confusing for admins.
     if (!profile) {
       const email = user.email ?? '';
       const stub = {
@@ -29,9 +26,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         display_name: email.split('@')[0] || 'User',
         initials: (email.slice(0, 2) || 'US').toUpperCase(),
         role: 'coach',
+        permissions: [],
       };
-      const { data: inserted } = await sb.from('profiles').insert(stub).select('display_name, initials, role').maybeSingle();
-      profile = (inserted as any) ?? { display_name: stub.display_name, initials: stub.initials, role: stub.role };
+      const { data: inserted } = await sb.from('profiles').insert(stub).select('display_name, initials, role, permissions').maybeSingle();
+      profile = (inserted as any) ?? { display_name: stub.display_name, initials: stub.initials, role: stub.role, permissions: stub.permissions };
     }
   }
 
@@ -41,6 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         displayName: profile?.display_name ?? (user.email ?? '').split('@')[0],
         initials: profile?.initials ?? (user.email ?? '').slice(0, 2).toUpperCase(),
         role: (profile?.role as 'coach' | 'admin') ?? 'coach',
+        permissions: profile?.permissions ?? [],
       }
     : null;
 
@@ -50,13 +49,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <div className="h-screen w-screen flex">
+    <div className="h-screen flex bg-ink-50/30 overflow-hidden">
       <Sidebar user={sessionUser} badges={badges} />
-      <main className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 h-screen">
         <Topbar user={sessionUser} />
-        <section className="flex-1 overflow-auto">{children}</section>
-      </main>
-      <Suspense fallback={null}>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
+      </div>
+      <Suspense>
         <StudentSlideover />
       </Suspense>
     </div>

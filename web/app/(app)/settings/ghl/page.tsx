@@ -1,78 +1,82 @@
 import { supabaseServer } from '@/lib/supabase/server';
-import { Link2, RefreshCw, AlertCircle } from 'lucide-react';
+import { supabaseAdmin } from '@/lib/supabase/admin';
+import { SettingsForm } from '@/components/settings/settings-form';
 
 export const dynamic = 'force-dynamic';
 
-export default async function GhlSettingsPage() {
+export default async function SettingsPage() {
   const sb = supabaseServer();
 
-  const [{ data: settings }, { data: events }] = await Promise.all([
-    sb.from('ghl_settings').select('*').eq('id', 1).maybeSingle(),
-    sb.from('reminder_events').select('id, name, default_workflow_id, recipient_type, enabled').order('id'),
+  const [{ data: { user } }, { data: status }] = await Promise.all([
+    sb.auth.getUser(),
+    sb.from('v_settings_status').select('*').eq('id', 1).maybeSingle(),
   ]);
 
-  const locationConfigured = !!(settings as any)?.location_id;
-  const lastSync = (settings as any)?.last_full_sync as string | null;
+  let isAdmin = false;
+  if (user) {
+    const { data: profile } = await sb
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .maybeSingle();
+    isAdmin = (profile as any)?.role === 'admin';
+  }
+
+  const safeStatus = (status as any) ?? {
+    location_id: null,
+    ai_provider: 'anthropic',
+    ghl_configured: false,       ghl_last4: '',
+    openai_configured: false,    openai_last4: '',
+    anthropic_configured: false, anthropic_last4: '',
+    ai_configured: false,        ai_last4: '',
+  };
+
+  // Fetch every team member (admin + coach) so the Team Access card can
+  // show actions on each. Uses service-role because auth.users is locked
+  // down by RLS.
+  type TeamMember = { id: string; email: string; display_name: string; initials: string; role: string };
+  let admins: TeamMember[] = [];
+  let coaches: TeamMember[] = [];
+  if (isAdmin) {
+    try {
+      const admin = supabaseAdmin();
+      const { data: profileRows, error: pErr } = await admin
+        .from('profiles')
+        .select('id, display_name, initials, role, permissions')
+        .in('role', ['admin', 'coach']);
+      if (pErr) {
+        console.error('[settings] profiles fetch failed:', pErr.message);
+      } else if (profileRows && profileRows.length > 0) {
+        const { data: usersResp, error: uErr } = await admin.auth.admin.listUsers({ perPage: 200 });
+        if (uErr) console.error('[settings] listUsers failed:', uErr.message);
+        const emailMap = new Map((usersResp?.users ?? []).map((u: any) => [u.id, u.email ?? '']));
+        const all: TeamMember[] = profileRows.map((p: any) => ({
+          id: p.id,
+          email: emailMap.get(p.id) ?? '',
+          display_name: p.display_name ?? '',
+          initials: p.initials ?? '',
+          role: p.role ?? 'coach',
+          permissions: p.permissions ?? [],
+        }));
+        admins  = all.filter((m) => m.role === 'admin');
+        coaches = all.filter((m) => m.role === 'coach');
+      }
+    } catch (e: any) {
+      console.error('[settings] admin fetch threw:', e?.message);
+    }
+  }
 
   return (
-    <div className="px-7 py-7 max-w-[1000px]">
-      <div className="mb-6">
-        <h1 className="text-[24px] font-semibold tracking-tight">GHL Integration</h1>
-        <p className="text-[13.5px] text-ink-500 mt-1">Connection status and reminder workflow IDs.</p>
-      </div>
-
-      <div className="bg-white border border-ink-200/70 rounded-xl p-5 mb-4">
-        <div className="flex items-start gap-3">
-          <span className={`w-9 h-9 rounded-lg grid place-items-center ${locationConfigured ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-            <Link2 className="w-4 h-4" />
-          </span>
-          <div className="flex-1">
-            <div className="font-semibold text-[14px]">
-              {locationConfigured ? 'Connected' : 'Not configured'}
-            </div>
-            <div className="text-[12.5px] text-ink-500 mt-0.5">
-              {locationConfigured
-                ? <>Location: <span className="font-mono text-ink-700">{(settings as any).location_id}</span></>
-                : <>Set <span className="font-mono">GHL_PIT_TOKEN</span> and <span className="font-mono">GHL_LOCATION_ID</span> in your environment, then trigger a sync.</>}
-            </div>
-            <div className="text-[11.5px] text-ink-500 mt-2">
-              Last full sync: {lastSync ? new Date(lastSync).toLocaleString() : 'never'}
-            </div>
-          </div>
-          <button className="h-9 px-3 rounded-lg border border-ink-200 text-[12.5px] font-medium hover:bg-ink-50 inline-flex items-center gap-1.5" title="Manual sync coming soon" disabled>
-            <RefreshCw className="w-3.5 h-3.5" /> Sync now
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white border border-ink-200/70 rounded-xl">
-        <div className="px-5 py-3.5 border-b border-ink-100">
-          <div className="font-semibold text-[14px]">Reminder workflow mapping</div>
-          <div className="text-[12px] text-ink-500 mt-0.5">Each event triggers a GHL workflow. IDs are read-only here — edit in the Reminders page.</div>
-        </div>
-        <div className="divide-y divide-ink-100">
-          {(events ?? []).length === 0 ? (
-            <div className="px-5 py-8 text-center text-[13px] text-ink-500 inline-flex items-center gap-2 justify-center w-full">
-              <AlertCircle className="w-4 h-4" /> No reminder events configured.
-            </div>
-          ) : (
-            (events as any[]).map((e) => (
-              <div key={e.id} className="px-5 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13.5px] font-medium truncate">{e.name}</div>
-                  <div className="text-[11.5px] text-ink-500"><span className="font-mono">{e.id}</span> · {e.recipient_type}</div>
-                </div>
-                <div className="text-[12px] font-mono text-ink-500 truncate max-w-[280px]">
-                  {e.default_workflow_id ?? <span className="text-amber-700">unmapped</span>}
-                </div>
-                <span className={`text-[11px] font-medium px-2 py-0.5 rounded ${e.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-ink-100 text-ink-600'}`}>
-                  {e.enabled ? 'enabled' : 'paused'}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
+    <div className="px-7 py-7 max-w-[900px]">
+      <h1 className="text-[24px] font-semibold tracking-tight mb-1">Settings</h1>
+      <p className="text-[13.5px] text-ink-500 mb-6">Workspace-level configuration.</p>
+      <SettingsForm
+        status={safeStatus}
+        isAdmin={isAdmin}
+        currentUserId={user?.id ?? null}
+        admins={admins}
+        coaches={coaches}
+      />
     </div>
   );
 }

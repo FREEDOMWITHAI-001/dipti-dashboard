@@ -1,37 +1,50 @@
 'use client';
- 
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   UsersRound, IndianRupee, BellRing, Phone, LineChart, Settings2, Link2,
-  ChevronUp, MessageSquare, CalendarClock, TrendingUp,
+  ChevronUp, MessageSquare, CalendarClock, TrendingUp, ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
- 
+
 type SessionUser = {
   email: string;
   displayName: string;
   initials: string;
   role: 'coach' | 'admin';
+  permissions: string[];
 } | null;
- 
+
 type Badges = { emi: number; calls: number };
- 
-const NAV: Array<{ href: string; label: string; icon: any; badgeKey?: keyof Badges; tone?: 'risk' | 'muted' }> = [
-  { href: '/students',   label: 'Students',     icon: UsersRound },
-  { href: '/emi',        label: 'EMI Tracker',  icon: IndianRupee, badgeKey: 'emi',   tone: 'risk' },
-  { href: '/progress',   label: 'Progress',     icon: TrendingUp },
-  { href: '/follow-ups', label: 'Follow-ups',   icon: CalendarClock },
-  { href: '/reminders',  label: 'Reminders',    icon: BellRing },
-  { href: '/calls',      label: 'Call Queue',   icon: Phone,       badgeKey: 'calls', tone: 'muted' },
-  { href: '/comments',   label: 'Comments',     icon: MessageSquare },
-  { href: '/reports',    label: 'Reports',      icon: LineChart },
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: any;
+  permKey: string;
+  badgeKey?: keyof Badges;
+  tone?: 'risk' | 'muted';
+};
+
+const NAV: NavItem[] = [
+  { href: '/students',   label: 'Students',     icon: UsersRound,    permKey: 'students' },
+  { href: '/emi',        label: 'EMI Tracker',  icon: IndianRupee,   permKey: 'emi',         badgeKey: 'emi',   tone: 'risk' },
+  { href: '/progress',   label: 'Progress',     icon: TrendingUp,    permKey: 'progress' },
+  { href: '/follow-ups', label: 'Follow-ups',   icon: CalendarClock, permKey: 'follow-ups' },
+  { href: '/reminders',  label: 'Reminders',    icon: BellRing,      permKey: 'reminders' },
+  { href: '/calls',      label: 'Call Queue',   icon: Phone,         permKey: 'calls',       badgeKey: 'calls', tone: 'muted' },
+  { href: '/comments',   label: 'Comments',     icon: MessageSquare, permKey: 'comments' },
+  { href: '/reports',    label: 'Reports',      icon: LineChart,     permKey: 'reports' },
 ];
- 
+
 export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges }) {
   const pathname = usePathname();
   const avatarClass = avClassForInitials(user?.initials ?? '');
- 
+  const isAdmin = user?.role === 'admin';
+  const permissions = new Set(user?.permissions ?? []);
+  const visibleNav = NAV.filter((item) => isAdmin || permissions.has(item.permKey));
+
   return (
     <aside className="w-[244px] shrink-0 bg-white border-r border-ink-200/70 flex flex-col">
       <div className="h-16 px-5 flex items-center gap-3 border-b border-ink-200/70">
@@ -41,9 +54,9 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
           <div className="text-[11px] text-ink-500 -mt-0.5">Diamond program</div>
         </div>
       </div>
- 
+
       <nav className="px-3 py-3 flex-1 space-y-0.5 text-[13.5px]">
-        {NAV.map(({ href, label, icon: Icon, badgeKey, tone }) => {
+        {visibleNav.map(({ href, label, icon: Icon, badgeKey, tone }) => {
           const active = pathname === href || pathname?.startsWith(href + '/');
           const count = badgeKey ? badges[badgeKey] : 0;
           const showBadge = badgeKey && count > 0;
@@ -67,7 +80,13 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
             </Link>
           );
         })}
- 
+
+        {visibleNav.length === 0 && user && (
+          <div className="px-3 py-3 text-[11.5px] text-ink-500 italic">
+            No pages assigned. Ask admin for access.
+          </div>
+        )}
+
         <div className="pt-4 pb-1.5 px-3 text-[10.5px] uppercase tracking-wider text-ink-400 font-semibold">
           Workspace
         </div>
@@ -77,17 +96,27 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
         )}>
           <Settings2 className="w-4 h-4" /> <span>Settings</span>
         </Link>
-        <Link href={'/settings/ghl' as any} className={cn(
-          'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg',
-          pathname?.startsWith('/settings/ghl') ? 'font-medium text-ink-900 bg-ink-100' : 'text-ink-700 hover:bg-ink-100/70'
-        )}>
-          <Link2 className="w-4 h-4" /> <span>GHL Integration</span>
-          <span className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-emerald-700">
-            <span className="dot bg-emerald-500" /> live
-          </span>
-        </Link>
+        {isAdmin && (
+          <>
+            <Link href={'/permissions' as any} className={cn(
+              'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg',
+              pathname === '/permissions' ? 'font-medium text-ink-900 bg-ink-100' : 'text-ink-700 hover:bg-ink-100/70'
+            )}>
+              <ShieldCheck className="w-4 h-4" /> <span>Permissions</span>
+            </Link>
+            <Link href={'/settings/ghl' as any} className={cn(
+              'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg',
+              pathname?.startsWith('/settings/ghl') ? 'font-medium text-ink-900 bg-ink-100' : 'text-ink-700 hover:bg-ink-100/70'
+            )}>
+              <Link2 className="w-4 h-4" /> <span>GHL Integration</span>
+              <span className="ml-auto inline-flex items-center gap-1 text-[10.5px] text-emerald-700">
+                <span className="dot bg-emerald-500" /> live
+              </span>
+            </Link>
+          </>
+        )}
       </nav>
- 
+
       <Link
         href={'/settings' as any}
         className="m-3 px-3 py-2.5 rounded-xl bg-ink-50/70 hover:bg-ink-100 border border-ink-200/60 flex items-center gap-3 text-left transition group"
@@ -111,7 +140,7 @@ export function Sidebar({ user, badges }: { user: SessionUser; badges: Badges })
     </aside>
   );
 }
- 
+
 const PRESETS = ['av-AK', 'av-DV', 'av-FM', 'av-S'];
 function avClassForInitials(initials: string): string {
   if (!initials) return 'bg-ink-900 text-white';
