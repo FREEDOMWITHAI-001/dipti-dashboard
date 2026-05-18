@@ -70,6 +70,14 @@ export async function fireReminder(_event: string, _row: any) {
 }
 
 export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | null): Promise<number> {
+  // Mark EMIs that are due today as 'due_soon' if still 'upcoming'
+  const today = new Date().toISOString().slice(0, 10);
+  await sb
+    .from('emi_schedule')
+    .update({ status: 'due_soon', updated_at: new Date().toISOString() } as any)
+    .eq('due_date', today)
+    .eq('status', 'upcoming');
+
   const { data: rows } = await sb.from('v_emi_due_today').select('*');
   let fired = 0;
   for (const r of (rows ?? []) as any[]) {
@@ -104,6 +112,16 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
 }
 
 export async function sweepEmiOverdue(sb: AnyClient, workflowId: string | null): Promise<number> {
+  // 1. Update status from 'upcoming' to 'overdue' for any EMIs past their due date.
+  // This keeps emi_schedule.status in sync with reality (used by UI filters & badges).
+  const today = new Date().toISOString().slice(0, 10);
+  await sb
+    .from('emi_schedule')
+    .update({ status: 'overdue', updated_at: new Date().toISOString() } as any)
+    .lt('due_date', today)
+    .in('status', ['upcoming', 'due_soon']);
+
+  // 2. Read the view (uses freshly-updated status) and send WhatsApp reminders.
   const { data: rows } = await sb.from('v_emi_overdue').select('*');
   let fired = 0;
   for (const r of (rows ?? []) as any[]) {
