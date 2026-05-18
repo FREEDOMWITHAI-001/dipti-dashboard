@@ -76,6 +76,10 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
     const dup = await sb.from('reminders').select('id')
       .eq('emi_id', r.id).in('status', ['queued', 'sent', 'delivered']).maybeSingle();
     if (dup.data) continue;
+    // Fetch student's payment link (if set) to include in WhatsApp message
+    const { data: stuRow } = await sb.from('students').select('payment_link').eq('id', r.student_id).maybeSingle();
+    const paymentLink = (stuRow as any)?.payment_link ?? null;
+
     const out = await dispatchReminder(sb, {
       event: 'emi.reminder_due',
       studentId: r.student_id,
@@ -90,6 +94,7 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
         amount: r.amount,
         due_date: r.due_date,
         installment: `${r.installment_no}/${r.installments_total}`,
+        payment_link: paymentLink,
       },
       triggeredBy: null,
     });
@@ -102,6 +107,9 @@ export async function sweepEmiOverdue(sb: AnyClient, workflowId: string | null):
   const { data: rows } = await sb.from('v_emi_overdue').select('*');
   let fired = 0;
   for (const r of (rows ?? []) as any[]) {
+    const { data: stuRow2 } = await sb.from('students').select('payment_link').eq('id', r.student_id).maybeSingle();
+    const paymentLink2 = (stuRow2 as any)?.payment_link ?? null;
+
     const out = await dispatchReminder(sb, {
       event: 'emi.overdue',
       studentId: r.student_id,
@@ -115,6 +123,7 @@ export async function sweepEmiOverdue(sb: AnyClient, workflowId: string | null):
         phone: normalizePhone(r.mobile),
         amount: r.amount,
         due_date: r.due_date,
+        payment_link: paymentLink2,
       },
       triggeredBy: null,
     });

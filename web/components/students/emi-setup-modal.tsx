@@ -20,6 +20,7 @@ export type EmiSetupValue = {
   monthly_amount: number;
   first_due_date: string;
   reminder_days_before: number;
+  payment_link: string;
 };
 
 const defaults: EmiSetupValue = {
@@ -30,6 +31,7 @@ const defaults: EmiSetupValue = {
   monthly_amount: 0,
   first_due_date: '',
   reminder_days_before: 2,
+  payment_link: '',
 };
 
 export function EmiSetupForm({
@@ -114,6 +116,17 @@ export function EmiSetupForm({
           className={fieldCls} placeholder="2" />
       </Field>
 
+      <Field label="Payment link (optional)">
+        <input type="url"
+          value={value.payment_link}
+          onChange={(e) => set('payment_link', e.target.value)}
+          className={fieldCls}
+          placeholder="https://rzp.io/i/... or any payment URL" />
+        <div className="text-[11px] text-ink-500 mt-1">
+          This link will be included in every EMI reminder sent to the student.
+        </div>
+      </Field>
+
       {value.total_fee > 0 && (
         <div className="rounded-lg bg-ink-50/70 border border-ink-200/70 p-3 text-[12.5px] space-y-0.5">
           <div className="flex justify-between">
@@ -160,6 +173,7 @@ export async function saveEmiPlan(
     total_fee: value.total_fee || null,
     down_payment: value.down_payment || null,
     down_payment_date: value.down_payment_date || null,
+    payment_link: value.payment_link?.trim() || null,
   } as any).eq('id', studentId);
   if (stuErr) return { ok: false, error: stuErr.message };
 
@@ -249,7 +263,7 @@ export function EmiSetupModal({
     let cancelled = false;
     (async () => {
       const [{ data: stu }, { data: rows }] = await Promise.all([
-        sb.from('students').select('total_fee, down_payment, down_payment_date').eq('id', studentId).maybeSingle(),
+        sb.from('students').select('total_fee, down_payment, down_payment_date, payment_link').eq('id', studentId).maybeSingle(),
         sb.from('emi_schedule').select('amount, installment_no, due_date').eq('student_id', studentId).order('installment_no'),
       ]);
       if (cancelled) return;
@@ -264,6 +278,7 @@ export function EmiSetupModal({
           monthly_amount:       Number(existingRows[0]?.amount ?? 0),
           first_due_date:       firstDue,
           reminder_days_before: 2,
+          payment_link:         (stu as any)?.payment_link ?? '',
         });
       }
       setLoading(false);
