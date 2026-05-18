@@ -18,18 +18,15 @@ export function QueueCard({ row }: { row: Row }) {
   const router = useRouter();
   const { toast } = useToast();
 
-  function openStudent() {
-    router.push(`/students?student=${row.id}` as any);
+  function openCallsTab() {
+    router.push(`/students?student=${row.id}&tab=calls` as any);
   }
 
   function callNow(e: React.MouseEvent) {
     e.stopPropagation();
-    if (row.mobile) {
-      window.location.href = `tel:${row.mobile.replace(/\s+/g, '')}`;
-    } else {
-      toast('No mobile number on file — open the student profile to add one.', 'info');
-      openStudent();
-    }
+    // Just open the Calls tab — coach uses their phone to actually call.
+    // No tel: link → no "Pick an app" prompt.
+    openCallsTab();
   }
 
   function skip(e: React.MouseEvent) {
@@ -41,8 +38,8 @@ export function QueueCard({ row }: { row: Row }) {
     <div
       role="button"
       tabIndex={0}
-      onClick={openStudent}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStudent(); } }}
+      onClick={openCallsTab}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCallsTab(); } }}
       className="bg-white border border-ink-200/70 rounded-xl p-5 hover:shadow-soft transition cursor-pointer"
     >
       <div className="flex items-start gap-3 mb-3">
@@ -59,7 +56,7 @@ export function QueueCard({ row }: { row: Row }) {
           onClick={callNow}
           className="btn-primary h-8 px-3 rounded-md text-[12px] font-medium flex items-center gap-1.5"
         >
-          <Phone className="w-3.5 h-3.5" /> Call now
+          <Phone className="w-3.5 h-3.5" /> Log call
         </button>
         <button
           type="button"
