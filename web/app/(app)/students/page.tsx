@@ -51,7 +51,32 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
   const lastCallByStudent: Record<string, string> = {};
   const lastPaymentByStudent: Record<string, { mode: string; date: string }> = {};
 
+  // Pre-compute EMI status per student: overdue / due / paid / none
+  const emiStatusByStudent: Record<string, 'overdue' | 'due' | 'paid' | 'none'> = {};
   if (studentIds.length > 0) {
+    const { data: allEmi } = await sb
+      .from('emi_schedule')
+      .select('student_id, status, due_date')
+      .in('student_id', studentIds);
+    const today = new Date().toISOString().slice(0, 10);
+    const next30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    // Group by student
+    const byStudent: Record<string, any[]> = {};
+    for (const row of ((allEmi ?? []) as any[])) {
+      if (!byStudent[row.student_id]) byStudent[row.student_id] = [];
+      byStudent[row.student_id].push(row);
+    }
+    for (const sid of studentIds) {
+      const rows = byStudent[sid] ?? [];
+      if (rows.length === 0) { emiStatusByStudent[sid] = 'none'; continue; }
+      const hasOverdue = rows.some((r) => r.status === 'overdue' || (r.status !== 'paid' && r.due_date < today));
+      if (hasOverdue) { emiStatusByStudent[sid] = 'overdue'; continue; }
+      const hasDueSoon = rows.some((r) => r.status !== 'paid' && r.due_date <= next30);
+      if (hasDueSoon) { emiStatusByStudent[sid] = 'due'; continue; }
+      const allPaid = rows.every((r) => r.status === 'paid');
+      emiStatusByStudent[sid] = allPaid ? 'paid' : 'due';
+    }
+
     const { data: calls } = await sb
       .from('call_logs')
       .select('student_id, created_at')
@@ -125,6 +150,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
         initialFilter={activeFilter}
         lastCallByStudent={lastCallByStudent}
         lastPaymentByStudent={lastPaymentByStudent}
+        emiStatusByStudent={emiStatusByStudent}
       />
     </div>
   );
