@@ -172,3 +172,127 @@ function EmptyState({ message }: { message: string }) {
 
 // Re-export the color palette so the page can use matching colors in legends.
 export const CHART_COLORS = COLORS;
+
+// ============================================================
+// Completion Distribution Chart
+// ============================================================
+export type CompletionDistributionPoint = { months: string; students: number };
+
+export function CompletionDistributionChart({ data }: { data: CompletionDistributionPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
+        <XAxis dataKey="months" tick={{ fontSize: 11, fill: COLORS.axisLbl }} />
+        <YAxis tick={{ fontSize: 11, fill: COLORS.axisLbl }} />
+        <Tooltip 
+          contentStyle={{ fontSize: 12, borderRadius: 8 }}
+          formatter={(v: any) => [v, 'Students']}
+        />
+        <Bar dataKey="students" fill={COLORS.primary} radius={[6, 6, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ============================================================
+// Per-Month Completion Chart
+// ============================================================
+export type PerMonthCompletionPoint = { month: string; completed: number; pct: number };
+
+export function PerMonthCompletionChart({ data }: { data: PerMonthCompletionPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} />
+        <XAxis dataKey="month" tick={{ fontSize: 11, fill: COLORS.axisLbl }} />
+        <YAxis 
+          tick={{ fontSize: 11, fill: COLORS.axisLbl }} 
+          domain={[0, 100]}
+          tickFormatter={(v) => `${v}%`}
+        />
+        <Tooltip 
+          contentStyle={{ fontSize: 12, borderRadius: 8 }}
+          formatter={(v: any, name: string, props: any) => 
+            name === 'pct' 
+              ? [`${v}% (${props.payload.completed} students)`, 'Completed']
+              : [v, name]
+          }
+        />
+        <Bar dataKey="pct" fill={COLORS.good} radius={[6, 6, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+
+// ============================================================
+// Achievements Overview Chart (horizontal bar)
+// ============================================================
+export type AchievementPoint = { name: string; count: number; fill: string };
+
+export function AchievementsOverviewChart({ data }: { data: AchievementPoint[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <BarChart 
+        data={data} 
+        layout="vertical" 
+        margin={{ top: 10, right: 28, left: 10, bottom: 0 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" stroke={COLORS.grid} horizontal={false} />
+        <XAxis type="number" stroke={COLORS.axis} tick={{ fontSize: 11, fill: COLORS.axisLbl }} allowDecimals={false} />
+        <YAxis 
+          dataKey="name" 
+          type="category" 
+          stroke={COLORS.axis}
+          tick={{ fontSize: 12, fill: COLORS.axisLbl, fontWeight: 500 }} 
+          width={120}
+        />
+        <Tooltip 
+          contentStyle={tooltipStyle}
+          formatter={(v: any) => [v, 'Students']}
+        />
+        <Bar 
+          dataKey="count" 
+          radius={[0, 6, 6, 0]} 
+          label={{ position: 'right', fontSize: 11, fill: COLORS.axisLbl }}
+        >
+          {data.map((entry, i) => (
+            <Cell key={i} fill={entry.fill} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ============================================================
+// Certificate Status Pie Chart
+// ============================================================
+export type CertStatusSlice = { name: string; value: number; fill: string };
+
+export function CertificateStatusChart({ data }: { data: CertStatusSlice[] }) {
+  return (
+    <ResponsiveContainer width="100%" height={250}>
+      <PieChart>
+        <Pie
+          data={data}
+          dataKey="value"
+          nameKey="name"
+          cx="50%"
+          cy="50%"
+          outerRadius={80}
+          innerRadius={40}
+          label={(e: any) => `${e.name}: ${e.value}`}
+          labelLine={false}
+        >
+          {data.map((entry, i) => (
+            <Cell key={i} fill={entry.fill} />
+          ))}
+        </Pie>
+        <Tooltip contentStyle={tooltipStyle} />
+        <Legend wrapperStyle={{ fontSize: 11 }} />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}

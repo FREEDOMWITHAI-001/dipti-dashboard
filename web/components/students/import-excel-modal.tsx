@@ -36,6 +36,8 @@ type MasterRow = {
   month_4: boolean;
   month_5: boolean;
   month_6: boolean;
+  is_super_baker_finisher: boolean;
+  bbr_attended: boolean;
 };
 
 type DetectedType = 'emi' | 'master' | 'unknown';
@@ -402,6 +404,8 @@ function parseMasterRow(row: any, rowNum: number): MasterRow | { error: string }
     month_4: parseBool(row['Month 4'] || row['month_4']),
     month_5: parseBool(row['Month 5'] || row['month_5']),
     month_6: parseBool(row['Month 6'] || row['month_6']),
+    is_super_baker_finisher: parseBool(row['SBF'] || row['Super Baker'] || row['super_baker']),
+    bbr_attended: hasValue(row['BBR2'] || row['BBR'] || row['bbr']),
   };
 }
 
@@ -411,6 +415,12 @@ function parseAmount(v: any): number {
   const n = parseFloat(s);
   return isNaN(n) ? 0 : Math.round(n);
 }
+function hasValue(v: any): boolean {
+  if (v == null) return false;
+  const s = v.toString().trim();
+  return s.length > 0 && s.toLowerCase() !== 'false' && s !== '0';
+}
+
 function parseBool(v: any): boolean {
   if (v == null) return false;
   const s = v.toString().trim().toLowerCase();

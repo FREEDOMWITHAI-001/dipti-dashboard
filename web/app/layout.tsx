@@ -1,3 +1,4 @@
+// @ts-ignore: side-effect import for global CSS
 import './globals.css';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import { ToastProvider } from '@/components/shell/toast-region';

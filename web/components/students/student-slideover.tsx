@@ -12,20 +12,20 @@ import { ProgressTab } from './progress-tab';
 import { CallsTab } from './calls-tab';
 import { PaymentsTab } from './payments-tab';
 import { ProgressAiTab } from './progress-ai-tab';
+import { AchievementsSection } from './achievements-section';
 import { TagEditor } from './tag-editor';
 import { ReminderModal } from '@/components/reminders/reminder-modal';
 import type { Database } from '@/types/database';
  
 type Student = Database['public']['Tables']['students']['Row'];
-type Tab = 'profile' | 'progress' | 'calls' | 'payments' | 'ai';
+type Tab = 'profile' | 'progress' | 'calls' | 'payments' | 'ai' | 'achievements';
  
 export function StudentSlideover() {
   const params = useSearchParams();
   const router = useRouter();
   const id = params.get('student');
-  const initialTab = (params.get('tab') as Tab) || 'profile';
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const [tab, setTab] = useState<Tab>('profile');
   const [student, setStudent] = useState<Student | null>(null);
   const [callsCount, setCallsCount] = useState(0);
   const [reminderOpen, setReminderOpen] = useState(false);
@@ -34,13 +34,11 @@ export function StudentSlideover() {
   useEffect(() => {
     if (id) {
       setOpen(true);
-      const tabFromUrl = (params.get('tab') as Tab) || 'profile';
-      setTab(tabFromUrl);
+      setTab('profile');
     } else {
       setOpen(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, params]);
+  }, [id]);
  
   useEffect(() => {
     if (!id) { setStudent(null); return; }
@@ -144,6 +142,7 @@ export function StudentSlideover() {
                 <TabBtn t="calls"    label="Calls"    active={tab} onClick={setTab} badge={String(callsCount)} />
                 <TabBtn t="payments" label="Payments" active={tab} onClick={setTab} />
                 <TabBtn t="ai"       label="AI Summary" active={tab} onClick={setTab} />
+                <TabBtn t="achievements" label="Achievements" active={tab} onClick={setTab} />
               </nav>
  
               <div className="flex-1 overflow-auto">
@@ -153,6 +152,7 @@ export function StudentSlideover() {
                   {tab === 'calls' && <CallsTab studentId={student.id} />}
                   {tab === 'payments' && <PaymentsTab studentId={student.id} />}
                   {tab === 'ai' && <ProgressAiTab studentId={student.id} />}
+                  {tab === 'achievements' && <AchievementsSection student={student} onChange={patchStudent} />}
                 </div>
               </div>
  
