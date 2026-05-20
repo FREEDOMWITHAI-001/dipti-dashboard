@@ -21,25 +21,18 @@ const TAG_DISPLAY_LIMIT = 3;
 // don't overlap. Used in both header and body rows; must match.
 const GRID_COLS = 'grid-cols-[36px_1.4fr_0.9fr_1fr_0.7fr_0.7fr_0.9fr_0.55fr]';
 
-type EmiStatus = 'overdue' | 'due' | 'paid' | 'none';
-// Progress filter uses min/max month and week ranges
-type ProgressRange = { monthsMin: number; monthsMax: number; weeksMin: number; weeksMax: number; active: boolean };
-const DEFAULT_PROGRESS: ProgressRange = { monthsMin: 0, monthsMax: 6, weeksMin: 0, weeksMax: 24, active: false };
-
 export function StudentsTable({
   initialStudents,
   totalCount,
   initialFilter = 'all',
   lastCallByStudent = {},
   lastPaymentByStudent = {},
-  emiStatusByStudent = {},
 }: {
   initialStudents: Row[];
   totalCount: number;
   initialFilter?: InitialFilter;
   lastCallByStudent?: Record<string, string>;
   lastPaymentByStudent?: Record<string, { mode: string; date: string }>;
-  emiStatusByStudent?: Record<string, EmiStatus>;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -51,8 +44,6 @@ export function StudentsTable({
     initialFilter !== 'all' ? new Set([initialFilter]) : new Set()
   );
   const [tagSel, setTagSel] = useState<Set<string>>(new Set());
-  const [emiFilter, setEmiFilter] = useState<Set<EmiStatus>>(new Set());
-  const [progressFilter, setProgressFilter] = useState<ProgressRange>(DEFAULT_PROGRESS);
   const sb = useMemo(() => supabaseBrowser(), []);
 
   useEffect(() => { setStudents(initialStudents); }, [initialStudents]);
@@ -98,32 +89,11 @@ export function StudentsTable({
       if (memberships.size > 0 && !(s.membership && memberships.has(s.membership))) return false;
       if (statuses.size > 0 && !statuses.has(studentStatusFromEnd(s.end_date) as StatusKey)) return false;
       if (tagSel.size > 0 && !s.tags?.some((t) => tagSel.has(t))) return false;
-
-      // EMI filter
-      if (emiFilter.size > 0) {
-        const myEmi = emiStatusByStudent[s.id] ?? 'none';
-        if (!emiFilter.has(myEmi as EmiStatus)) return false;
-      }
-
-      // Progress filter (range of months and/or weeks completed)
-      if (progressFilter.active) {
-        const monthsDone = [
-          (s as any).month_1, (s as any).month_2, (s as any).month_3,
-          (s as any).month_4, (s as any).month_5, (s as any).month_6,
-        ].filter(Boolean).length;
-        const weeksDone = Array.from({ length: 24 }, (_, i) =>
-          (s as any)[`week_${i + 1}`]
-        ).filter(Boolean).length;
-
-        if (monthsDone < progressFilter.monthsMin || monthsDone > progressFilter.monthsMax) return false;
-        if (weeksDone < progressFilter.weeksMin || weeksDone > progressFilter.weeksMax) return false;
-      }
-
       return true;
     });
-  }, [students, query, memberships, statuses, tagSel, emiFilter, progressFilter, emiStatusByStudent]);
+  }, [students, query, memberships, statuses, tagSel]);
 
-  useEffect(() => { setPage(1); }, [query, memberships, statuses, tagSel, emiFilter, progressFilter]);
+  useEffect(() => { setPage(1); }, [query, memberships, statuses, tagSel]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, pageCount);
@@ -171,42 +141,15 @@ export function StudentsTable({
           onChange={setTagSel}
         />
         <FilterDropdown<StatusKey>
-          label="Validity"
+          label="Status"
           options={[
-            { value: 'active',   label: 'Active',        description: 'Diamond access valid for 30+ days' },
-            { value: 'expiring', label: 'Expiring soon', description: 'Expires within next 30 days' },
-            { value: 'expired',  label: 'Expired',       description: 'Diamond access already expired' },
+            { value: 'active',   label: 'Active' },
+            { value: 'expiring', label: 'Expiring soon' },
+            { value: 'expired',  label: 'Expired' },
           ]}
           selected={statuses}
           onChange={setStatuses}
         />
-        <FilterDropdown<EmiStatus>
-          label="EMI"
-          options={[
-            { value: 'paid',    label: 'All paid',     description: 'Every EMI marked paid' },
-            { value: 'due',     label: 'Due upcoming', description: 'Unpaid EMI due in next 30 days' },
-            { value: 'overdue', label: 'Overdue',      description: 'At least one EMI past due' },
-            { value: 'none',    label: 'No EMI plan',  description: 'No EMI schedule set' },
-          ]}
-          selected={emiFilter}
-          onChange={setEmiFilter}
-        />
-        <ProgressFilterDropdown value={progressFilter} onChange={setProgressFilter} />
-        {(emiFilter.size > 0 || progressFilter.active || statuses.size > 0 || memberships.size > 0 || tagSel.size > 0) && (
-          <button
-            onClick={() => {
-              setEmiFilter(new Set());
-              setProgressFilter(DEFAULT_PROGRESS);
-              setStatuses(new Set());
-              setMemberships(new Set());
-              setTagSel(new Set());
-              router.push('/students' as any);
-            }}
-            className="text-[11.5px] font-medium text-rose-700 hover:underline"
-          >
-            Clear all
-          </button>
-        )}
         <div className="ml-auto text-[12px] text-ink-500">
           Showing <span className="font-medium text-ink-900">{filtered.length}</span> of {totalCount}
         </div>
@@ -294,9 +237,12 @@ export function StudentsTable({
               </div>
               <div className="text-[12px] min-w-0 overflow-hidden">
                 {lastPayment ? (
-                  <div className="flex items-center gap-1 text-ink-700 min-w-0">
-                    <IndianRupee className="w-3 h-3 text-ink-400 flex-shrink-0" />
-                    <span className="truncate">{lastPayment.mode} · {lastPayment.date}</span>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-1 text-ink-900 font-medium min-w-0">
+                      <IndianRupee className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                      <span className="truncate">{lastPayment.mode}</span>
+                    </div>
+                    <span className="text-[10.5px] text-ink-500 truncate pl-3.5">{lastPayment.date}</span>
                   </div>
                 ) : (
                   <span className="text-ink-400">—</span>
@@ -364,7 +310,7 @@ function FilterDropdown<T extends string = string>({
   label, options, selected, onChange,
 }: {
   label: string;
-  options: Array<{ value: T; label: string; description?: string }>;
+  options: Array<{ value: T; label: string }>;
   selected: Set<T>;
   onChange: (next: Set<T>) => void;
 }) {
@@ -415,18 +361,12 @@ function FilterDropdown<T extends string = string>({
                   <button
                     key={o.value}
                     onClick={() => toggle(o.value)}
-                    title={o.description}
-                    className="w-full flex items-start gap-2 px-3 py-2 text-[13px] text-left hover:bg-ink-50"
+                    className="w-full flex items-center gap-2 px-3 h-8 text-[13px] text-left hover:bg-ink-50"
                   >
-                    <span className={cn('w-4 h-4 rounded border grid place-items-center mt-0.5 shrink-0', active ? 'bg-accent-600 border-accent-600 text-white' : 'border-ink-300')}>
+                    <span className={cn('w-4 h-4 rounded border grid place-items-center', active ? 'bg-accent-600 border-accent-600 text-white' : 'border-ink-300')}>
                       {active && <Check className="w-3 h-3" />}
                     </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="truncate font-medium">{o.label}</div>
-                      {o.description && (
-                        <div className="text-[10.5px] text-ink-500 mt-0.5 leading-snug">{o.description}</div>
-                      )}
-                    </div>
+                    <span className="flex-1 truncate">{o.label}</span>
                   </button>
                 );
               })
@@ -440,131 +380,5 @@ function FilterDropdown<T extends string = string>({
         </div>
       )}
     </div>
-  );
-}
-
-function ProgressFilterDropdown({ value, onChange }: { value: ProgressRange; onChange: (v: ProgressRange) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState<ProgressRange>(value);
-
-  useEffect(() => { setDraft(value); }, [value]);
-
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    if (open) document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [open]);
-
-  function apply() {
-    onChange({ ...draft, active: true });
-    setOpen(false);
-  }
-
-  function clear() {
-    onChange(DEFAULT_PROGRESS);
-    setDraft(DEFAULT_PROGRESS);
-    setOpen(false);
-  }
-
-  const summary = value.active
-    ? `${value.monthsMin}-${value.monthsMax}M · ${value.weeksMin}-${value.weeksMax}W`
-    : '';
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          'h-9 px-3 rounded-lg border text-[12.5px] font-medium flex items-center gap-1.5 hover:bg-ink-50',
-          value.active ? 'border-accent-500 text-accent-700 bg-accent-50' : 'border-ink-200 text-ink-700'
-        )}
-      >
-        Progress
-        {value.active && <span className="text-[10.5px] bg-accent-100 text-accent-700 rounded px-1.5 font-mono">{summary}</span>}
-        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-[calc(100%+4px)] w-[300px] bg-white border border-ink-200/80 shadow-pop rounded-lg overflow-hidden z-30 p-4">
-          <div className="text-[12px] font-semibold text-ink-700 mb-3">Filter by completion range</div>
-
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11.5px] font-medium text-ink-700">Months completed</label>
-              <span className="text-[11px] font-mono text-ink-500">{draft.monthsMin} - {draft.monthsMax}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number" min={0} max={6} value={draft.monthsMin}
-                onChange={(e) => setDraft({ ...draft, monthsMin: Math.max(0, Math.min(6, Number(e.target.value) || 0)) })}
-                className="w-14 h-8 px-2 rounded border border-ink-200 text-[12.5px] text-center"
-              />
-              <span className="text-ink-400 text-[12px]">to</span>
-              <input
-                type="number" min={0} max={6} value={draft.monthsMax}
-                onChange={(e) => setDraft({ ...draft, monthsMax: Math.max(0, Math.min(6, Number(e.target.value) || 0)) })}
-                className="w-14 h-8 px-2 rounded border border-ink-200 text-[12.5px] text-center"
-              />
-              <span className="text-[11px] text-ink-500">of 6</span>
-            </div>
-          </div>
-
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11.5px] font-medium text-ink-700">Weeks completed</label>
-              <span className="text-[11px] font-mono text-ink-500">{draft.weeksMin} - {draft.weeksMax}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number" min={0} max={24} value={draft.weeksMin}
-                onChange={(e) => setDraft({ ...draft, weeksMin: Math.max(0, Math.min(24, Number(e.target.value) || 0)) })}
-                className="w-14 h-8 px-2 rounded border border-ink-200 text-[12.5px] text-center"
-              />
-              <span className="text-ink-400 text-[12px]">to</span>
-              <input
-                type="number" min={0} max={24} value={draft.weeksMax}
-                onChange={(e) => setDraft({ ...draft, weeksMax: Math.max(0, Math.min(24, Number(e.target.value) || 0)) })}
-                className="w-14 h-8 px-2 rounded border border-ink-200 text-[12.5px] text-center"
-              />
-              <span className="text-[11px] text-ink-500">of 24</span>
-            </div>
-          </div>
-
-          <div className="text-[10.5px] text-ink-500 mb-3 leading-relaxed bg-ink-50/70 px-2.5 py-1.5 rounded">
-            Show students who have completed between the entered range of months AND weeks.
-          </div>
-
-          {/* Quick presets */}
-          <div className="mb-3">
-            <div className="text-[10.5px] uppercase tracking-wider font-semibold text-ink-500 mb-1.5">Quick</div>
-            <div className="flex flex-wrap gap-1">
-              <PresetBtn label="All completed" onClick={() => setDraft({ ...draft, monthsMin: 6, monthsMax: 6, weeksMin: 24, weeksMax: 24 })} />
-              <PresetBtn label="Half done (3M)" onClick={() => setDraft({ ...draft, monthsMin: 3, monthsMax: 3, weeksMin: 0, weeksMax: 24 })} />
-              <PresetBtn label="Just started (0-1M)" onClick={() => setDraft({ ...draft, monthsMin: 0, monthsMax: 1, weeksMin: 0, weeksMax: 24 })} />
-              <PresetBtn label="Pending" onClick={() => setDraft({ ...draft, monthsMin: 0, monthsMax: 5, weeksMin: 0, weeksMax: 23 })} />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button onClick={clear} className="flex-1 h-8 rounded-md border border-ink-200 text-[12px] font-medium hover:bg-ink-50">
-              Clear
-            </button>
-            <button onClick={apply} className="flex-1 h-8 rounded-md bg-ink-900 text-white text-[12px] font-medium hover:bg-ink-800">
-              Apply filter
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PresetBtn({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="text-[11px] px-2 py-1 rounded border border-ink-200 hover:bg-accent-50 hover:border-accent-300 hover:text-accent-700 transition">
-      {label}
-    </button>
   );
 }

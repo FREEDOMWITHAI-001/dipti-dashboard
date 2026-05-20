@@ -6,6 +6,7 @@ import { UploadCloud, DownloadCloud, Plus, X, Loader2, ChevronDown, ChevronUp } 
 import { Button } from '@/components/ui/button';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
+import { ImportExcelModal } from './import-excel-modal';
 import { EmiSetupForm, emiDefaults, saveEmiPlan, type EmiSetupValue } from './emi-setup-modal';
 
 export function StudentsActions() {
@@ -13,12 +14,13 @@ export function StudentsActions() {
   const [openAdd, setOpenAdd] = useState(false);
   const [openPull, setOpenPull] = useState(false);
   const [openCsv, setOpenCsv] = useState(false);
+  const [openExcel, setOpenExcel] = useState(false);
 
   return (
     <>
       <div className="flex items-center gap-2">
-        <Button onClick={() => setOpenCsv(true)}>
-          <UploadCloud className="w-4 h-4" /> Import CSV
+        <Button onClick={() => setOpenExcel(true)}>
+          <UploadCloud className="w-4 h-4" /> Import Excel
         </Button>
         <Button onClick={() => setOpenPull(true)}>
           <DownloadCloud className="w-4 h-4" /> Pull from GHL
@@ -31,6 +33,7 @@ export function StudentsActions() {
       {openAdd && <AddStudentModal onClose={() => setOpenAdd(false)} onCreated={() => router.refresh()} />}
       {openPull && <PullFromGhlModal onClose={() => setOpenPull(false)} onDone={() => router.refresh()} />}
       {openCsv && <ImportCsvModal onClose={() => setOpenCsv(false)} onDone={() => router.refresh()} />}
+      {openExcel && <ImportExcelModal onClose={() => setOpenExcel(false)} onDone={() => router.refresh()} />}
     </>
   );
 }
