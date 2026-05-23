@@ -89,3 +89,18 @@ export function normalizePhone(
   // Anything else: best-effort prepend +.
   return '+' + s;
 }
+// Achievement labels shown as tags. Computed from achievement fields so they
+// always stay in sync with the student's actual achievement state.
+export function achievementTags(s: {
+  is_super_baker_finisher?: boolean | null;
+  is_hall_of_fame?: boolean | null;
+  certificate_issued?: boolean | null;
+  bbr_attended?: boolean | null;
+}): string[] {
+  const tags: string[] = [];
+  if (s.is_super_baker_finisher) tags.push('🏆 Super Baker');
+  if (s.is_hall_of_fame) tags.push('⭐ Hall of Fame');
+  if (s.certificate_issued) tags.push('📜 Certificate');
+  if (s.bbr_attended) tags.push('📅 BBR');
+  return tags;
+}

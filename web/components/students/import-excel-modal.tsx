@@ -17,6 +17,23 @@ type EmiRow = {
   due_date: string;
   payment_mode: string;
   total_fee: number;
+  payment_link: string | null;
+  // Optional achievement + progress columns (if present in EMI sheet)
+  month_1?: boolean; month_2?: boolean; month_3?: boolean;
+  month_4?: boolean; month_5?: boolean; month_6?: boolean;
+  is_super_baker_finisher?: boolean;
+  is_hall_of_fame?: boolean;
+  certificate_issued?: boolean;
+  certificate_issued_date?: string | null;
+  bbr_attended?: boolean;
+  bbr_attended_date?: string | null;
+  background?: string | null;
+  call_logs?: { date: string | null; comment: string; coach_label: string }[];
+  membership?: string | null;
+  tags?: string[];
+  start_date?: string | null;
+  end_date?: string | null;
+  course_end_date?: string | null;
 };
 
 type MasterRow = {
@@ -37,7 +54,13 @@ type MasterRow = {
   month_5: boolean;
   month_6: boolean;
   is_super_baker_finisher: boolean;
+  is_hall_of_fame: boolean;
+  certificate_issued: boolean;
+  certificate_issued_date: string | null;
   bbr_attended: boolean;
+  bbr_attended_date: string | null;
+  call_logs: { date: string | null; comment: string; coach_label: string }[];
+  course_end_date?: string | null;
 };
 
 type DetectedType = 'emi' | 'master' | 'unknown';
@@ -48,6 +71,7 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
   const [emiRows, setEmiRows] = useState<EmiRow[]>([]);
   const [masterRows, setMasterRows] = useState<MasterRow[]>([]);
   const [detected, setDetected] = useState<DetectedType>('unknown');
+  const [extras, setExtras] = useState<string[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<{ inserted: number; updated: number; emis: number } | null>(null);
@@ -61,6 +85,7 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
     setMasterRows([]);
     setErrors([]);
     setDone(null);
+    setExtras([]);
 
     try {
       const XLSX = await import('xlsx');
@@ -79,6 +104,18 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
       const type = detectFileType(columns);
       setDetected(type);
 
+      // Detect what EXTRA data is present (beyond core payment/profile)
+      const cols = columns.map(x => x.toLowerCase());
+      const found: string[] = [];
+      if (['month 1','month 2','month 3'].some(m => cols.includes(m))) found.push('Course progress (Month 1-6)');
+      if (cols.some(x => x === 'sbf' || x.includes('super baker'))) found.push('Super Baker');
+      if (cols.some(x => x.includes('hall of fame') || x === 'hof')) found.push('Hall of Fame');
+      if (cols.some(x => x.includes('certificate') || x === 'cert')) found.push('Certificate');
+      if (cols.some(x => x === 'bbr2' || x === 'bbr')) found.push('BBR attendance');
+      if (cols.some(x => x.includes('remark') || x.includes('comment') || x.includes('background'))) found.push('Comments');
+      if (cols.some(x => x.includes('call date') || x.includes('call remark'))) found.push('Call logs');
+      setExtras(found);
+
       if (type === 'unknown') {
         setErrors([
           `Couldn't detect file type. Expected columns:`,
@@ -95,6 +132,12 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
 
       json.forEach((row, idx) => {
         const rowNum = idx + 2;
+        // Skip non-data rows: notes, legends, empty rows.
+        // A real data row MUST have a valid email (contains "@") in the email column.
+        const emailVal = (row['Email Id'] || row['Email'] || row['email'] || '').toString().trim();
+        if (!emailVal.includes('@')) {
+          return;  // silently skip — this is a note/legend/empty row, not data
+        }
         try {
           if (type === 'emi') {
             const parsed = parseEmiRow(row, rowNum);
@@ -219,6 +262,18 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
                     ? 'Will create EMI plans + mark past installments as paid'
                     : 'Will update profile + monthly progress (won\'t touch EMIs)'}
                 </div>
+                {extras.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-current/10">
+                    <div className="text-[11px] font-medium mb-1">Also importing:</div>
+                    <div className="flex flex-wrap gap-1">
+                      {extras.map((e, i) => (
+                        <span key={i} className="text-[10.5px] px-1.5 py-0.5 rounded bg-white/60 border border-current/20">
+                          ✓ {e}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -233,10 +288,10 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
             )}
 
             {errors.length > 0 && (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-[12px] text-rose-800 space-y-0.5">
-                <div className="font-semibold mb-1">⚠ {errors.length} issue(s):</div>
-                {errors.slice(0, 8).map((e, i) => <div key={i}>• {e}</div>)}
-                {errors.length > 8 && <div>…and {errors.length - 8} more.</div>}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800 space-y-0.5">
+                <div className="font-semibold mb-1">⚠ {errors.length} row(s) will be skipped (rest will import fine):</div>
+                {errors.slice(0, 5).map((e, i) => <div key={i}>• {e}</div>)}
+                {errors.length > 5 && <div>…and {errors.length - 5} more.</div>}
               </div>
             )}
 
@@ -298,7 +353,7 @@ export function ImportExcelModal({ onClose, onDone }: { onClose: () => void; onD
               {totalRows > 0 && !done && detected !== 'unknown' && (
                 <button
                   onClick={commit}
-                  disabled={busy || errors.length > 0}
+                  disabled={busy}
                   className={`ml-auto h-10 px-5 rounded-lg text-white text-[13px] font-medium disabled:opacity-50 flex items-center gap-2 ${
                     detected === 'emi' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
                   }`}
@@ -367,8 +422,29 @@ function parseEmiRow(row: any, rowNum: number): EmiRow | { error: string } {
     emi_total: total,
     emi_amount: amount,
     due_date: dueDate,
-    payment_mode: normalizeMode(row['Unnamed: 8'] || row['payment_mode'] || row['mode']),
+    payment_mode: normalizeMode(row['Payment Mode'] || row['Mode'] || row['payment_mode'] || row['mode'] || row['Unnamed: 8']),
     total_fee: amount * total,
+    payment_link: (row['Payment Link'] || row['payment_link'] || row['Unnamed: 9'] || '').toString().trim() || null,
+    // Achievement + progress columns (optional — only used if present in sheet)
+    month_1: hasMonthCol(row, 1) ? parseBool(row['Month 1'] || row['month_1']) : undefined,
+    month_2: hasMonthCol(row, 2) ? parseBool(row['Month 2'] || row['month_2']) : undefined,
+    month_3: hasMonthCol(row, 3) ? parseBool(row['Month 3'] || row['month_3']) : undefined,
+    month_4: hasMonthCol(row, 4) ? parseBool(row['Month 4'] || row['month_4']) : undefined,
+    month_5: hasMonthCol(row, 5) ? parseBool(row['Month 5'] || row['month_5']) : undefined,
+    month_6: hasMonthCol(row, 6) ? parseBool(row['Month 6'] || row['month_6']) : undefined,
+    is_super_baker_finisher: ('SBF' in row || 'Super Baker' in row) ? parseBool(row['SBF'] || row['Super Baker']) : undefined,
+    is_hall_of_fame: ('Hall of Fame' in row || 'HOF' in row) ? parseBool(row['Hall of Fame'] || row['HOF']) : undefined,
+    certificate_issued: ('Certificate' in row || 'Cert' in row) ? parseBool(row['Certificate'] || row['Cert']) : undefined,
+    certificate_issued_date: parseDate(row['Certificate Date'] || row['Cert Date']),
+    bbr_attended: ('BBR2' in row || 'BBR' in row) ? parseBBR(row['BBR2'] || row['BBR']) : undefined,
+    bbr_attended_date: parseDate(row['BBR Date']),
+    background: emiComments(row),
+    call_logs: emiCallLogs(row),
+    membership: ('Membership' in row) ? ((row['Membership'] || '').toString().trim() || null) : undefined,
+    tags: ('Tags' in row || 'tags' in row) ? parseTags(row['Tags'] || row['tags']) : undefined,
+    start_date: parseDate(row['Start Date'] || row['start_date']),
+    end_date: parseDate(row['End Date'] || row['end_date']),
+    course_end_date: parseDate(row['Course End Date'] || row['course_end_date']),
   };
 }
 
@@ -387,6 +463,26 @@ function parseMasterRow(row: any, rowNum: number): MasterRow | { error: string }
     }
   });
 
+  // Parse call log entries: pair each Call Date column with its comment column
+  const callLogs: { date: string | null; comment: string; coach_label: string }[] = [];
+  const callPairs = [
+    { dateCol: 'Call Date',   commentCol: 'DV Comments',   coach: 'DV' },
+    { dateCol: 'Call Date.1', commentCol: 'AK Comments',   coach: 'AK' },
+    { dateCol: 'Call Date.2', commentCol: 'FM Comments.1', coach: 'FM' },
+    { dateCol: 'Call Date.3', commentCol: 'AK Comments.1', coach: 'AK' },
+  ];
+  for (const pair of callPairs) {
+    const comment = row[pair.commentCol];
+    const date = row[pair.dateCol];
+    if (comment && comment.toString().trim()) {
+      callLogs.push({
+        date: parseDate(date),
+        comment: comment.toString().trim(),
+        coach_label: pair.coach,
+      });
+    }
+  }
+
   return {
     type: 'master',
     email: email.toLowerCase(),
@@ -404,8 +500,14 @@ function parseMasterRow(row: any, rowNum: number): MasterRow | { error: string }
     month_4: parseBool(row['Month 4'] || row['month_4']),
     month_5: parseBool(row['Month 5'] || row['month_5']),
     month_6: parseBool(row['Month 6'] || row['month_6']),
-    is_super_baker_finisher: parseBool(row['SBF'] || row['Super Baker'] || row['super_baker']),
-    bbr_attended: hasValue(row['BBR2'] || row['BBR'] || row['bbr']),
+    is_super_baker_finisher: parseBool(row['SBF'] || row['Super Baker'] || row['Super Baker Finisher'] || row['super_baker']),
+    is_hall_of_fame: parseBool(row['Hall of Fame'] || row['HOF'] || row['hall_of_fame'] || row['HallOfFame']),
+    certificate_issued: parseBool(row['Certificate'] || row['Certificate Issued'] || row['Cert'] || row['certificate_issued']),
+    certificate_issued_date: parseDate(row['Certificate Date'] || row['Cert Date'] || row['certificate_date']),
+    bbr_attended: parseBBR(row['BBR2'] || row['BBR'] || row['bbr']),
+    bbr_attended_date: parseDate(row['BBR Date'] || row['bbr_date']),
+    call_logs: callLogs,
+    course_end_date: parseDate(row['Course End Date'] || row['course_end_date']),
   };
 }
 
@@ -419,6 +521,45 @@ function hasValue(v: any): boolean {
   if (v == null) return false;
   const s = v.toString().trim();
   return s.length > 0 && s.toLowerCase() !== 'false' && s !== '0';
+}
+
+// BBR2 column: "BBR2" = attended, "BBR-ABSENT" = absent (NOT attended), "" = no data
+function emiCallLogs(row: any): { date: string | null; comment: string; coach_label: string }[] {
+  const logs: { date: string | null; comment: string; coach_label: string }[] = [];
+  const pairs = [
+    { dateCol: 'Call Date',   commentCol: 'Call Remarks', coach: 'Call' },
+    { dateCol: 'Call Date',   commentCol: 'DV Comments',  coach: 'DV' },
+    { dateCol: 'Call Date.1', commentCol: 'AK Comments',  coach: 'AK' },
+  ];
+  for (const p of pairs) {
+    const comment = row[p.commentCol];
+    if (comment && comment.toString().trim()) {
+      logs.push({ date: parseDate(row[p.dateCol]), comment: comment.toString().trim(), coach_label: p.coach });
+    }
+  }
+  return logs;
+}
+
+function emiComments(row: any): string | null {
+  const parts: string[] = [];
+  ['Remarks', 'Comments', 'Notes', 'FM Comments', 'DV Comments', 'AK Comments'].forEach(col => {
+    const v = row[col];
+    if (v && v.toString().trim()) parts.push(`[${col}]: ${v.toString().trim()}`);
+  });
+  return parts.length > 0 ? parts.join('\n\n') : null;
+}
+
+function hasMonthCol(row: any, n: number): boolean {
+  return (`Month ${n}` in row) || (`month_${n}` in row);
+}
+
+function parseBBR(v: any): boolean {
+  if (v == null) return false;
+  const s = v.toString().trim().toLowerCase();
+  if (s.length === 0) return false;
+  if (s.includes('absent')) return false;   // BBR-ABSENT = did not attend
+  if (s.includes('bbr')) return true;        // BBR2 = attended
+  return false;
 }
 
 function parseBool(v: any): boolean {

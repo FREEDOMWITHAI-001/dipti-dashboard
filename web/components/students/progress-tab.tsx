@@ -1,14 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { cn } from '@/lib/utils';
 import type { Database } from '@/types/database';
 
 type Student = Database['public']['Tables']['students']['Row'];
-type WeekKey = `week_${1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24}`;
+type MonthKey = 'month_1' | 'month_2' | 'month_3' | 'month_4' | 'month_5' | 'month_6';
 
 export function ProgressTab({
   student,
@@ -19,156 +18,135 @@ export function ProgressTab({
 }) {
   const sb = supabaseBrowser();
   const { toast } = useToast();
-  const weeks: WeekKey[] = Array.from({ length: 24 }, (_, i) => `week_${i + 1}` as WeekKey);
-  const months: Array<'month_1' | 'month_2' | 'month_3' | 'month_4' | 'month_5' | 'month_6'> =
-    ['month_1', 'month_2', 'month_3', 'month_4', 'month_5', 'month_6'];
+  const months: MonthKey[] = ['month_1', 'month_2', 'month_3', 'month_4', 'month_5', 'month_6'];
+  const [weeks, setWeeks] = useState<Set<number>>(new Set());
+  const [busyWeek, setBusyWeek] = useState<number | null>(null);
 
-  const weeksCompleted = weeks.filter((w) => (student as any)[w]).length;
-  const monthsCompleted = months.filter((m) => (student as any)[m]).length;
-  const [busyWeek, setBusyWeek] = useState<WeekKey | null>(null);
-
-  async function toggleWeek(w: WeekKey) {
-    const next = !(student as any)[w];
-    const weekNum = parseInt(w.replace('week_', ''));
-    const monthNum = Math.ceil(weekNum / 4);
-    const monthKey = `month_${monthNum}` as 'month_1';
-
-    // Determine if month should be set to true/false:
-    // After this toggle, check all 4 weeks of this month
-    const monthWeeks = [1, 2, 3, 4].map((i) => `week_${(monthNum - 1) * 4 + i}` as WeekKey);
-    const futureWeeksCompleted = monthWeeks.filter((mw) =>
-      mw === w ? next : !!(student as any)[mw]
-    ).length;
-    const shouldMonthBeComplete = futureWeeksCompleted === 4;
-    const currentMonthState = !!(student as any)[monthKey];
-
-    // Optimistic update — both week and month
-    const patch: any = { [w]: next };
-    if (shouldMonthBeComplete !== currentMonthState) {
-      patch[monthKey] = shouldMonthBeComplete;
+  // Fetch weekly checkpoints (the source of truth — months are derived from these)
+  async function loadWeeks() {
+    const { data } = await sb
+      .from('weekly_checkpoints')
+      .select('week_no, completed')
+      .eq('student_id', student.id);
+    const done = new Set<number>();
+    for (const w of (data ?? []) as any[]) {
+      if (w.completed) done.add(w.week_no);
     }
-    onChange?.(patch);
+    setWeeks(done);
+  }
+  useEffect(() => { loadWeeks().catch(() => {}); /* eslint-disable-next-line */ }, [student.id]);
 
-    setBusyWeek(w);
-    const { error } = await sb.from('students').update(patch as any).eq('id', student.id);
+  // A month is complete when ALL 4 of its weeks are complete (auto-computed)
+  function monthComplete(monthIdx: number): boolean {
+    const start = monthIdx * 4 + 1;
+    return [start, start + 1, start + 2, start + 3].every((wn) => weeks.has(wn));
+  }
+  const completed = months.filter((_, i) => monthComplete(i)).length;
+
+  // Toggle an individual week (manual). Month auto-recomputes from weeks.
+  async function toggleWeek(wn: number) {
+    const isDone = weeks.has(wn);
+    const next = !isDone;
+
+    // Optimistic UI
+    const optimistic = new Set(weeks);
+    if (next) optimistic.add(wn); else optimistic.delete(wn);
+    setWeeks(optimistic);
+    setBusyWeek(wn);
+
+    const { error } = await sb
+      .from('weekly_checkpoints')
+      .upsert({ student_id: student.id, week_no: wn, completed: next } as any, { onConflict: 'student_id,week_no' });
     setBusyWeek(null);
 
     if (error) {
-      // Rollback
-      const rollback: any = { [w]: !next };
-      if (shouldMonthBeComplete !== currentMonthState) {
-        rollback[monthKey] = currentMonthState;
-      }
-      onChange?.(rollback);
+      // rollback
+      setWeeks(new Set(weeks));
       toast(error.message, 'error');
       return;
     }
 
-    let msg = `Week ${weekNum} ${next ? 'completed' : 'unmarked'}`;
-    if (shouldMonthBeComplete && !currentMonthState) {
-      msg = `Week ${weekNum} completed — Month ${monthNum} auto-completed!`;
-    } else if (!shouldMonthBeComplete && currentMonthState) {
-      msg = `Week ${weekNum} unmarked — Month ${monthNum} no longer complete`;
+    // Recompute the affected month from the new week set, push to parent so
+    // other tabs / Achievements (6-month challenge, certificate lock) stay in sync.
+    const monthIdx = Math.floor((wn - 1) / 4);
+    const start = monthIdx * 4 + 1;
+    const monthNowDone = [start, start + 1, start + 2, start + 3].every((w) => optimistic.has(w));
+    const monthKey = `month_${monthIdx + 1}` as MonthKey;
+    if (!!student[monthKey] !== monthNowDone) {
+      onChange?.({ [monthKey]: monthNowDone } as Partial<Student>);
     }
-    toast(msg, 'success');
+
+    toast(`Week ${wn} ${next ? 'completed' : 'unmarked'}`, 'success');
   }
 
   return (
     <div className="space-y-6">
-      {/* Summary card */}
+      {/* Summary */}
       <div className="bg-white border border-ink-200/70 rounded-xl p-5">
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="flex items-end justify-between mb-3">
           <div>
-            <div className="text-[12px] text-ink-500 font-medium">Months completed</div>
+            <div className="text-[12px] text-ink-500 font-medium">Course completion</div>
             <div className="text-[28px] font-semibold tracking-tight leading-none mt-1">
-              {monthsCompleted} <span className="text-ink-400 font-normal text-[18px]">/ 6</span>
+              {completed} <span className="text-ink-400 font-normal text-[18px]">/ 6 months</span>
             </div>
-            <div className="flex items-center gap-1 mt-2.5">
-              {months.map((m) => (
-                <div key={m} className={cn('flex-1 h-1.5 rounded-full transition-colors', (student as any)[m] ? 'bg-emerald-500' : 'bg-ink-200')} />
-              ))}
-            </div>
-            <div className="text-[11px] text-ink-500 mt-2">Auto-completed when all 4 weeks of a month are done</div>
           </div>
-          <div>
-            <div className="text-[12px] text-ink-500 font-medium">Weeks completed</div>
-            <div className="text-[28px] font-semibold tracking-tight leading-none mt-1">
-              {weeksCompleted} <span className="text-ink-400 font-normal text-[18px]">/ 24</span>
+          <div className="text-[11.5px] text-ink-500">{weeks.size} / 24 weeks &middot; {Math.round(completed / 6 * 100)}%</div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {months.map((m, i) => (
+            <div key={m} className={cn('flex-1 h-1.5 rounded-full transition-colors', monthComplete(i) ? 'bg-emerald-500' : 'bg-ink-200')} />
+          ))}
+        </div>
+        <div className="mt-3 grid grid-cols-6 gap-1.5 text-[11px] text-center text-ink-500">
+          {months.map((m, i) => (
+            <div key={m} className={cn('py-1 rounded transition-colors', monthComplete(i) ? 'bg-emerald-50 text-emerald-700 font-medium' : 'bg-ink-50')}>
+              M{i + 1}
             </div>
-            <div className="flex items-center gap-0.5 mt-2.5">
-              {weeks.map((w) => (
-                <div key={w} className={cn('flex-1 h-1.5 rounded-sm transition-colors', (student as any)[w] ? 'bg-accent-500' : 'bg-ink-200')} />
-              ))}
-            </div>
-            <div className="text-[11px] text-ink-500 mt-2">{Math.round(weeksCompleted / 24 * 100)}% complete</div>
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Weekly checkpoints by month */}
+      {/* Weekly checkpoints — MANUALLY CLICKABLE */}
       <div className="bg-white border border-ink-200/70 rounded-xl p-5">
-        <h3 className="text-[14px] font-semibold mb-1">Weekly checkpoints</h3>
-        <p className="text-[12px] text-ink-500 mb-4">Click any week to toggle. When all 4 weeks of a month are checked, that month auto-completes.</p>
-
-        {[1, 2, 3, 4, 5, 6].map((monthNum) => {
-          const monthWeeks = weeks.slice((monthNum - 1) * 4, monthNum * 4);
-          const monthCompleted = monthWeeks.filter((w) => (student as any)[w]).length;
-          const isMonthDone = monthCompleted === 4;
-          return (
-            <div key={monthNum} className="mb-5 last:mb-0">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-[12.5px] font-semibold text-ink-700">Month {monthNum}</h4>
-                  {isMonthDone && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      <Check className="w-2.5 h-2.5" />
-                      complete
-                    </span>
-                  )}
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-[14px] font-semibold">Weekly checkpoints</h3>
+          <span className="text-[11.5px] text-ink-500">{weeks.size} / 24 weeks</span>
+        </div>
+        <p className="text-[12px] text-ink-500 mb-3">Click any week to mark it complete. Completing all 4 weeks marks the month done.</p>
+        <div className="space-y-2">
+          {months.map((m, mi) => {
+            const monthDone = monthComplete(mi);
+            const weekNums = [mi * 4 + 1, mi * 4 + 2, mi * 4 + 3, mi * 4 + 4];
+            return (
+              <div key={m} className="flex items-center gap-2">
+                <span className={cn('text-[11px] w-12 font-medium', monthDone ? 'text-emerald-700' : 'text-ink-400')}>
+                  M{mi + 1}
+                </span>
+                <div className="flex gap-1.5 flex-1">
+                  {weekNums.map((wn) => {
+                    const done = weeks.has(wn);
+                    const wBusy = busyWeek === wn;
+                    return (
+                      <button
+                        key={wn}
+                        onClick={() => !wBusy && toggleWeek(wn)}
+                        disabled={wBusy}
+                        className={cn(
+                          'flex-1 h-7 rounded grid place-items-center text-[10.5px] font-medium transition cursor-pointer',
+                          done ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-ink-100 text-ink-400 hover:bg-ink-200',
+                          wBusy && 'opacity-50'
+                        )}
+                        title={`Week ${wn}`}
+                      >
+                        {wBusy ? '…' : `W${wn}`}
+                      </button>
+                    );
+                  })}
                 </div>
-                <span className="text-[11px] text-ink-500 font-medium">{monthCompleted}/4 weeks</span>
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                {monthWeeks.map((w) => {
-                  const weekNum = parseInt(w.replace('week_', ''));
-                  const isOn = !!(student as any)[w];
-                  const isBusy = busyWeek === w;
-                  return (
-                    <button
-                      key={w}
-                      onClick={() => !isBusy && toggleWeek(w)}
-                      disabled={isBusy}
-                      className={cn(
-                        'h-14 px-2 rounded-lg border text-center transition relative',
-                        isOn
-                          ? 'bg-accent-50/60 border-accent-300 hover:bg-accent-50'
-                          : 'bg-white border-ink-200 hover:border-ink-300 hover:bg-ink-50',
-                        isBusy && 'opacity-60'
-                      )}
-                    >
-                      <div className={cn('text-[10px] uppercase tracking-wider font-medium mb-0.5', isOn ? 'text-accent-700' : 'text-ink-500')}>
-                        Week
-                      </div>
-                      <div className={cn('text-[15px] font-bold leading-none', isOn ? 'text-accent-700' : 'text-ink-900')}>
-                        {weekNum}
-                      </div>
-                      {isOn && !isBusy && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent-500 grid place-items-center">
-                          <Check className="w-2.5 h-2.5 text-white" />
-                        </span>
-                      )}
-                      {isBusy && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white border border-ink-300 grid place-items-center">
-                          <Loader2 className="w-2.5 h-2.5 text-ink-500 animate-spin" />
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

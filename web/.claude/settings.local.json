@@ -3,7 +3,10 @@
     "allow": [
       "Read(//c/Users/saiki/Downloads/dva-dashboard-updated/dva-dashboard-updated/**)",
       "Read(//c/Users/saiki/Downloads/dva-dashboard-updated/**)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

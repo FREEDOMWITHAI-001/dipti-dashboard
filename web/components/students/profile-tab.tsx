@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pencil, Check, X, Sparkles } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
-import { fmtDate } from '@/lib/utils';
+import { fmtDate, achievementTags } from '@/lib/utils';
 import { VoiceButton } from './voice-button';
 import { useToast } from '@/components/shell/toast-region';
 import type { Database } from '@/types/database';
@@ -194,11 +194,12 @@ export function ProfileTab({ student }: { student: Student }) {
           ) : (
             <Field label="Membership" value={<span className="font-medium">{student.membership ?? '—'}</span>} />
           )}
-          <Field label="Tags" value={student.tags?.length
-            ? <>{student.tags.map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 mr-1">{t}</span>)}</>
+          <Field label="Tags" value={(achievementTags(student as any).length || student.tags?.length)
+            ? <>{achievementTags(student as any).map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 mr-1">{t}</span>)}{(student.tags ?? []).map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 mr-1">{t}</span>)}</>
             : <span className="text-ink-400">none</span>} />
           <EditableField label="Start date" editing={editingProgram} value={startDate} display={fmtDate(student.start_date)} type="date" onChange={setStartDate} />
           <EditableField label="End date" editing={editingProgram} value={endDate} display={fmtDate(student.end_date)} type="date" onChange={setEndDate} />
+          <Field label="Course end date" value={fmtDate((student as any).course_end_date)} />
         </div>
       </div>
 
