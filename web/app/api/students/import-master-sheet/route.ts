@@ -12,8 +12,6 @@ type ParsedRow = {
   mobile: string;
   membership: string;
   tags: string[];
-  start_date: string | null;
-  end_date: string | null;
   background: string;
   month_1: boolean;
   month_2: boolean;
@@ -29,6 +27,7 @@ type ParsedRow = {
   bbr_attended_date: string | null;
   call_logs?: { date: string | null; comment: string; coach_label: string }[];
   course_end_date?: string | null;
+  course_start_date?: string | null;
 };
 
 export async function POST(req: Request) {
@@ -67,8 +66,6 @@ export async function POST(req: Request) {
         mobile: row.mobile || null,
         membership: row.membership,
         tags: row.tags,
-        start_date: row.start_date,
-        end_date: row.end_date,
         background: row.background || null,
         month_1: row.month_1,
         month_2: row.month_2,
@@ -83,6 +80,7 @@ export async function POST(req: Request) {
         bbr_attended: row.bbr_attended,
         bbr_attended_date: row.bbr_attended_date,
         ...(row.course_end_date ? { course_end_date: row.course_end_date } : {}),
+        ...(row.course_start_date ? { course_start_date: row.course_start_date } : {}),
       };
 
       let studentId: string;

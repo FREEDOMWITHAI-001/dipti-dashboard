@@ -96,7 +96,7 @@ export function StudentsTable({
         if (!hit) return false;
       }
       if (memberships.size > 0 && !(s.membership && memberships.has(s.membership))) return false;
-      if (statuses.size > 0 && !statuses.has(studentStatusFromEnd(s.end_date) as StatusKey)) return false;
+      if (statuses.size > 0 && !statuses.has(studentStatusFromEnd((s as any).course_end_date) as StatusKey)) return false;
       if (tagSel.size > 0 && ![...achievementTags(s as any), ...(s.tags ?? [])].some((t) => tagSel.has(t))) return false;
 
       if (emiFilter.size > 0) {
@@ -246,7 +246,7 @@ export function StudentsTable({
         <div>Student</div>
         <div>Membership</div>
         <div>Tags</div>
-        <div>End date</div>
+        <div>Course end</div>
         <div>Last call</div>
         <div>Payment</div>
         <div className="text-right">Status</div>
@@ -254,11 +254,11 @@ export function StudentsTable({
 
       <div>
         {pageRows.map((s) => {
-          const allTags = [...achievementTags(s as any), ...(s.tags ?? [])];
-          const totalTags = allTags.length;
-          const visibleTags = allTags.slice(0, TAG_DISPLAY_LIMIT);
+          const allRowTags = [...achievementTags(s as any), ...(s.tags ?? [])];
+          const totalTags = allRowTags.length;
+          const visibleTags = allRowTags.slice(0, TAG_DISPLAY_LIMIT);
           const overflowCount = Math.max(0, totalTags - TAG_DISPLAY_LIMIT);
-          const overflowTagsTitle = allTags.slice(TAG_DISPLAY_LIMIT).join(', ');
+          const overflowTagsTitle = allRowTags.slice(TAG_DISPLAY_LIMIT).join(', ');
           const lastCall = lastCallByStudent[s.id];
           const lastPayment = lastPaymentByStudent[s.id];
 
@@ -275,7 +275,7 @@ export function StudentsTable({
               </div>
               <div className="text-[13px] min-w-0 overflow-hidden">
                 <div className="text-ink-900 font-medium truncate">{s.membership ?? '—'}</div>
-                <div className="text-[11px] text-ink-500 truncate">{fmtDateShort(s.start_date)} – {fmtDateShort(s.end_date)}</div>
+                <div className="text-[11px] text-ink-500 truncate">{fmtDateShort((s as any).course_start_date)} – {fmtDateShort((s as any).course_end_date)}</div>
               </div>
               <div className="flex flex-wrap gap-1 items-center min-w-0 overflow-hidden">
                 {totalTags === 0 && <span className="text-[11px] text-ink-400">—</span>}
@@ -298,10 +298,10 @@ export function StudentsTable({
                 )}
               </div>
               <div className="text-[12.5px] min-w-0 overflow-hidden">
-                <div className="font-medium truncate">{fmtDateShort(s.end_date)}</div>
+                <div className="font-medium truncate">{fmtDateShort((s as any).course_end_date)}</div>
                 <div className="text-[10.5px] text-ink-500 truncate">{
                   (() => {
-                    const d = daysFromNow(s.end_date);
+                    const d = daysFromNow((s as any).course_end_date);
                     if (d === null) return '—';
                     if (d < 0) return 'expired';
                     return `in ${d}d`;
@@ -329,7 +329,7 @@ export function StudentsTable({
                 )}
               </div>
               <div className="flex items-center justify-end min-w-0">
-                <StatusPill status={studentStatusFromEnd(s.end_date)} />
+                <StatusPill status={studentStatusFromEnd((s as any).course_end_date)} />
               </div>
             </button>
           );

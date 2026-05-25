@@ -30,6 +30,8 @@ export type Database = {
           tags: string[];
           start_date: string | null;
           end_date: string | null;
+          course_start_date: string | null;
+          course_end_date: string | null;
           background: string | null;
           upgrade_flag: boolean;
           month_1: boolean; month_2: boolean; month_3: boolean;
@@ -76,10 +78,6 @@ export type Database = {
           paid_date: string | null;
           payment_link: string | null;
           payment_mode: string | null;
-          cashfree_link_id: string | null;
-          cashfree_link_url: string | null;
-          cashfree_link_status: string | null;
-          cashfree_link_created_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -165,27 +163,9 @@ export type Database = {
           ghl_pit_token: string | null;
           openai_api_key: string | null;
           anthropic_api_key: string | null;
-          cashfree_app_id: string | null;
-          cashfree_secret_key: string | null;
-          cashfree_env: 'sandbox' | 'production' | null;
-          cashfree_webhook_secret: string | null;
         };
         Insert: Partial<Database['public']['Tables']['ghl_settings']['Row']>;
         Update: Partial<Database['public']['Tables']['ghl_settings']['Row']>;
-      };
-      cashfree_events: {
-        Row: {
-          id: number;
-          emi_id: string | null;
-          student_id: string | null;
-          event_type: string;
-          cashfree_link_id: string | null;
-          payload: Record<string, unknown> | null;
-          error: string | null;
-          created_at: string;
-        };
-        Insert: Partial<Database['public']['Tables']['cashfree_events']['Row']> & { event_type: string };
-        Update: Partial<Database['public']['Tables']['cashfree_events']['Row']>;
       };
     };
     Views: {
@@ -199,12 +179,9 @@ export type Database = {
           ghl_configured: boolean;
           openai_configured: boolean;
           anthropic_configured: boolean;
-          cashfree_configured: boolean;
           ghl_last4: string;
           openai_last4: string;
           anthropic_last4: string;
-          cashfree_app_id_last4: string;
-          cashfree_env: 'sandbox' | 'production';
           last_full_sync: string | null;
           updated_at: string;
         };

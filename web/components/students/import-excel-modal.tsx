@@ -31,9 +31,8 @@ type EmiRow = {
   call_logs?: { date: string | null; comment: string; coach_label: string }[];
   membership?: string | null;
   tags?: string[];
-  start_date?: string | null;
-  end_date?: string | null;
   course_end_date?: string | null;
+  course_start_date?: string | null;
 };
 
 type MasterRow = {
@@ -44,8 +43,6 @@ type MasterRow = {
   mobile: string;
   membership: string;
   tags: string[];
-  start_date: string | null;
-  end_date: string | null;
   background: string;
   month_1: boolean;
   month_2: boolean;
@@ -61,6 +58,7 @@ type MasterRow = {
   bbr_attended_date: string | null;
   call_logs: { date: string | null; comment: string; coach_label: string }[];
   course_end_date?: string | null;
+  course_start_date?: string | null;
 };
 
 type DetectedType = 'emi' | 'master' | 'unknown';
@@ -442,9 +440,8 @@ function parseEmiRow(row: any, rowNum: number): EmiRow | { error: string } {
     call_logs: emiCallLogs(row),
     membership: ('Membership' in row) ? ((row['Membership'] || '').toString().trim() || null) : undefined,
     tags: ('Tags' in row || 'tags' in row) ? parseTags(row['Tags'] || row['tags']) : undefined,
-    start_date: parseDate(row['Start Date'] || row['start_date']),
-    end_date: parseDate(row['End Date'] || row['end_date']),
     course_end_date: parseDate(row['Course End Date'] || row['course_end_date']),
+    course_start_date: parseDate(row['Course Start Date'] || row['course_start_date']),
   };
 }
 
@@ -491,8 +488,6 @@ function parseMasterRow(row: any, rowNum: number): MasterRow | { error: string }
     mobile: cleanPhone(row['Mobile Number'] || row['Mobile'] || row['mobile']),
     membership: (row['Membership'] || row['membership'] || '').toString().trim() || 'Diamond',
     tags: parseTags(row['Tags'] || row['tags']),
-    start_date: parseDate(row['Start Date'] || row['start_date']),
-    end_date: parseDate(row['End Date'] || row['end_date']),
     background: commentParts.join('\n\n'),
     month_1: parseBool(row['Month 1'] || row['month_1']),
     month_2: parseBool(row['Month 2'] || row['month_2']),
@@ -508,6 +503,7 @@ function parseMasterRow(row: any, rowNum: number): MasterRow | { error: string }
     bbr_attended_date: parseDate(row['BBR Date'] || row['bbr_date']),
     call_logs: callLogs,
     course_end_date: parseDate(row['Course End Date'] || row['course_end_date']),
+    course_start_date: parseDate(row['Course Start Date'] || row['course_start_date']),
   };
 }
 

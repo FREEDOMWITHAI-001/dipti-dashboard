@@ -39,8 +39,8 @@ export function ProfileTab({ student }: { student: Student }) {
 
   const [editingProgram, setEditingProgram] = useState(false);
   const [membership, setMembership] = useState(student.membership ?? '');
-  const [startDate, setStartDate] = useState(student.start_date ?? '');
-  const [endDate, setEndDate] = useState(student.end_date ?? '');
+  const [startDate, setStartDate] = useState((student as any).course_start_date ?? '');
+  const [endDate, setEndDate] = useState((student as any).course_end_date ?? '');
 
   const lastStudentId = useRef<string>(student.id);
   useEffect(() => {
@@ -57,12 +57,12 @@ export function ProfileTab({ student }: { student: Student }) {
       setMobile(student.mobile ?? '');
       setEditingIdentity(false);
       setMembership(student.membership ?? '');
-      setStartDate(student.start_date ?? '');
-      setEndDate(student.end_date ?? '');
+      setStartDate((student as any).course_start_date ?? '');
+      setEndDate((student as any).course_end_date ?? '');
       setEditingProgram(false);
       lastStudentId.current = student.id;
     }
-  }, [student.id, student.background, student.dipti_comments, student.first_name, student.last_name, student.email, student.mobile, student.membership, student.start_date, student.end_date]);
+  }, [student.id, student.background, student.dipti_comments, student.first_name, student.last_name, student.email, student.mobile, student.membership, (student as any).course_start_date, (student as any).course_end_date]);
 
   async function saveBg() {
     const newValue = bg;
@@ -97,8 +97,8 @@ export function ProfileTab({ student }: { student: Student }) {
   async function saveProgram() {
     const { error } = await sb.from('students').update({
       membership: membership.trim() || null,
-      start_date: startDate || null,
-      end_date: endDate || null,
+      course_start_date: startDate || null,
+      course_end_date: endDate || null,
     }).eq('id', student.id);
     if (error) { toast(error.message, 'error'); return; }
     setEditingProgram(false);
@@ -116,8 +116,8 @@ export function ProfileTab({ student }: { student: Student }) {
   }
   function cancelProgram() {
     setMembership(student.membership ?? '');
-    setStartDate(student.start_date ?? '');
-    setEndDate(student.end_date ?? '');
+    setStartDate((student as any).course_start_date ?? '');
+    setEndDate((student as any).course_end_date ?? '');
     setEditingProgram(false);
   }
 
@@ -197,9 +197,8 @@ export function ProfileTab({ student }: { student: Student }) {
           <Field label="Tags" value={(achievementTags(student as any).length || student.tags?.length)
             ? <>{achievementTags(student as any).map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 mr-1">{t}</span>)}{(student.tags ?? []).map((t) => <span key={t} className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-ink-100 text-ink-700 mr-1">{t}</span>)}</>
             : <span className="text-ink-400">none</span>} />
-          <EditableField label="Start date" editing={editingProgram} value={startDate} display={fmtDate(student.start_date)} type="date" onChange={setStartDate} />
-          <EditableField label="End date" editing={editingProgram} value={endDate} display={fmtDate(student.end_date)} type="date" onChange={setEndDate} />
-          <Field label="Course end date" value={fmtDate((student as any).course_end_date)} />
+          <EditableField label="Course start date" editing={editingProgram} value={startDate} display={fmtDate((student as any).course_start_date)} type="date" onChange={setStartDate} />
+          <EditableField label="Course end date" editing={editingProgram} value={endDate} display={fmtDate((student as any).course_end_date)} type="date" onChange={setEndDate} />
         </div>
       </div>
 

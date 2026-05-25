@@ -29,9 +29,8 @@ type ParsedRow = {
   call_logs?: { date: string | null; comment: string; coach_label: string }[];
   membership?: string | null;
   tags?: string[];
-  start_date?: string | null;
-  end_date?: string | null;
   course_end_date?: string | null;
+  course_start_date?: string | null;
 };
 
 // Build optional achievement/progress fields (only include keys that are defined)
@@ -52,9 +51,8 @@ function achievementFields(row: ParsedRow): Record<string, any> {
   if (row.background) f.background = row.background;
   if (row.membership !== undefined && row.membership !== null) f.membership = row.membership;
   if (row.tags !== undefined) f.tags = row.tags;
-  if (row.start_date) f.start_date = row.start_date;
-  if (row.end_date) f.end_date = row.end_date;
   if (row.course_end_date) f.course_end_date = row.course_end_date;
+  if (row.course_start_date) f.course_start_date = row.course_start_date;
   return f;
 }
 
