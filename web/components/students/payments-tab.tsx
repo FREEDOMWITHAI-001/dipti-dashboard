@@ -99,6 +99,11 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
 
   const planTotal = totalEmi + downPayment;
   const mismatch = totalFee > 0 ? totalFee - planTotal : 0;
+  // Money-received view (down payment + paid installments) vs the fee. These
+  // drive the "fully paid" / "extra collected" banners — they reflect actual
+  // cash in, not just how the plan was configured.
+  const overpaid  = totalFee > 0 ? totalPaid - totalFee : 0;
+  const fullyPaid = totalFee > 0 && totalPaid > 0 && outstanding === 0 && overpaid <= 1;
   const nextInstallmentNo = rows.reduce((m, r) => Math.max(m, Number(r.installment_no) || 0), 0) + 1;
   // Balance already covered by unpaid installments on the plan. "Collect
   // payment" should default to what's NOT yet scheduled, so it doesn't add a
@@ -168,9 +173,25 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
         </div>
       )}
 
-      {/* Plan exceeds the total fee — extra was collected. Not an error: show a
-          calm confirmation instead of the mismatch warning. */}
-      {mismatch < -1 && (
+      {/* Fully paid — money received exactly clears the fee. Positive
+          confirmation; no action needed. */}
+      {fullyPaid && (
+        <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl px-4 py-3.5 flex items-start gap-3">
+          <span className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 grid place-items-center shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-[13.5px] text-emerald-900">Fully paid</div>
+            <div className="text-[12px] text-emerald-800 mt-1 leading-relaxed">
+              {fmtINR(totalPaid)} received against the total fee of {fmtINR(totalFee)}. Nothing outstanding.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Overpaid — more money received than the fee. Not an error: show the
+          extra collected instead of the mismatch warning. */}
+      {overpaid > 1 && (
         <div className="bg-emerald-50/70 border border-emerald-300 rounded-xl px-4 py-3.5 flex items-start gap-3">
           <span className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 grid place-items-center shrink-0">
             <CheckCircle2 className="w-4 h-4" />
@@ -178,7 +199,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           <div className="flex-1 min-w-0">
             <div className="font-semibold text-[13.5px] text-emerald-900">Extra amount added — existing fee is done</div>
             <div className="text-[12px] text-emerald-800 mt-1 leading-relaxed">
-              ₹{Math.abs(mismatch).toLocaleString('en-IN')} extra collected over the total fee of {fmtINR(totalFee)}.
+              {fmtINR(totalPaid)} received against the total fee of {fmtINR(totalFee)} — ₹{overpaid.toLocaleString('en-IN')} extra.
             </div>
           </div>
         </div>
