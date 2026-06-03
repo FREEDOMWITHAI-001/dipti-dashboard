@@ -706,26 +706,35 @@ function parseDate(v: any): string | null {
     const d = String(v.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
-  const s = v.toString().trim();
+  let s = v.toString().trim();
   if (!s) return null;
 
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0, 10);
+
+  // Strip ordinal suffixes so "3rd June 2026" / "1st" / "22nd" parse like the
+  // plain number. Without this the day-month-year matchers below all miss.
+  s = s.replace(/(\d{1,2})(st|nd|rd|th)\b/gi, '$1');
 
   const months: Record<string, string> = {
     jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
     jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
   };
-  const m1 = s.match(/^(\d{1,2})\s+(\w+)\s+(\d{4})$/);
+  const fullYear = (y: string) => { const n = parseInt(y, 10); return (n < 100 ? n + 2000 : n).toString(); };
+
+  // Day MonthName Year — separators can be space, hyphen or slash, year 2 or 4
+  // digits. Covers "30 May 2026", "30-May-26", "3 June 2026", "30/May/2026".
+  const m1 = s.match(/^(\d{1,2})[\s\-/]+([A-Za-z]+)[\s\-/]+(\d{2,4})$/);
   if (m1) {
     const day = m1[1].padStart(2, '0');
     const mon = months[m1[2].substring(0, 3).toLowerCase()];
-    if (mon) return `${m1[3]}-${mon}-${day}`;
+    if (mon) return `${fullYear(m1[3])}-${mon}-${day}`;
   }
-  const m1b = s.match(/^(\w+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  // MonthName Day Year — "May 30, 2026", "June 3 2026", "May-30-26".
+  const m1b = s.match(/^([A-Za-z]+)[\s\-/]+(\d{1,2}),?[\s\-/]+(\d{2,4})$/);
   if (m1b) {
     const mon = months[m1b[1].substring(0, 3).toLowerCase()];
     const day = m1b[2].padStart(2, '0');
-    if (mon) return `${m1b[3]}-${mon}-${day}`;
+    if (mon) return `${fullYear(m1b[3])}-${mon}-${day}`;
   }
 
   const m2 = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
