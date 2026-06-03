@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { IndianRupee, Plus, CheckCircle2, AlertTriangle, Pencil, Link as LinkIcon, Copy } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { IndianRupee, Plus, CheckCircle2, AlertTriangle, Pencil, Link as LinkIcon, Copy, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
@@ -36,8 +36,11 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
   const [busyCashfree, setBusyCashfree] = useState<string | null>(null);
+  const [busySync, setBusySync] = useState<string | null>(null);
   const [paymentIdsByEmi, setPaymentIdsByEmi] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
+  // Auto status-reconcile runs once per student load so it can't loop with load().
+  const autoSyncDone = useRef(false);
 
   function copyLinkToClipboard(link: string) {
     navigator.clipboard.writeText(link).then(() => {
@@ -66,29 +69,80 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
     }
   }
 
-  async function load() {
+  async function load(): Promise<Emi[]> {
     const [{ data: emi }, { data: stu }, { data: cfEvents }] = await Promise.all([
       sb.from('emi_schedule').select('*').eq('student_id', studentId).order('installment_no'),
       sb.from('students').select('total_fee, down_payment, down_payment_date, payment_link').eq('id', studentId).maybeSingle(),
       sb.from('cashfree_events').select('emi_id, payload').eq('student_id', studentId).eq('event_type', 'payment_success'),
     ]);
-    setRows((emi ?? []) as Emi[]);
+    const emiRows = (emi ?? []) as Emi[];
+    setRows(emiRows);
     setStudent((stu as any) ?? null);
-    
+
     // Build payment ID map: emi_id → payment_id
     const idMap: Record<string, string> = {};
     for (const evt of (cfEvents ?? []) as any[]) {
       if (evt.emi_id) {
-        const pid = evt.payload?.data?.payment?.cf_payment_id 
+        const pid = evt.payload?.data?.payment?.cf_payment_id
                  ?? evt.payload?.data?.payment?.payment_id;
         if (pid) idMap[evt.emi_id] = pid.toString();
       }
     }
     setPaymentIdsByEmi(idMap);
     setLoaded(true);
+    return emiRows;
   }
 
-  useEffect(() => { (async () => { await load(); })().catch(() => {}); /* eslint-disable-next-line */ }, [studentId, sb]);
+  // Reconcile one EMI with Cashfree's live link status (marks paid if PAID there).
+  // `silent` skips the toast for the background auto-sync. Returns whether it flipped.
+  async function syncCashfreeStatus(emiId: string, silent = false): Promise<boolean> {
+    if (!silent) setBusySync(emiId);
+    try {
+      const res = await fetch('/api/cashfree/sync-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emiId }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error ?? 'Failed');
+      if (!silent) {
+        if (data.marked_paid) toast('Payment confirmed — marked paid.', 'success');
+        else if (data.already_paid) toast('Already marked paid.', 'success');
+        else toast(`Cashfree status: ${data.status ?? 'unknown'} — not paid yet.`, 'info');
+        await load();
+      }
+      return !!data.marked_paid;
+    } catch (e: any) {
+      if (!silent) toast(e.message ?? 'Failed to sync status', 'error');
+      return false;
+    } finally {
+      if (!silent) setBusySync(null);
+    }
+  }
+
+  // Best-effort background reconcile: for any unpaid EMI that has a Cashfree
+  // link, ask Cashfree whether it's been paid. Catches payments completed when
+  // the webhook couldn't reach the app. Runs once per student load.
+  async function autoSyncCashfree(currentRows: Emi[]) {
+    const pending = currentRows.filter(r => r.status !== 'paid' && (r as any).cashfree_link_id);
+    if (pending.length === 0) return;
+    const results = await Promise.allSettled(pending.map(r => syncCashfreeStatus(r.id, true)));
+    const anyPaid = results.some(r => r.status === 'fulfilled' && r.value);
+    if (anyPaid) await load();
+  }
+
+  useEffect(() => {
+    autoSyncDone.current = false;
+    let cancelled = false;
+    (async () => {
+      const emiRows = await load();
+      if (cancelled || autoSyncDone.current) return;
+      autoSyncDone.current = true;
+      await autoSyncCashfree(emiRows);
+    })().catch(() => {});
+    return () => { cancelled = true; };
+    /* eslint-disable-next-line */
+  }, [studentId, sb]);
 
   const totalEmi    = rows.reduce((s, r) => s + Number(r.amount), 0);
   const paidEmi     = rows.filter(r => r.status === 'paid').reduce((s, r) => s + Number(r.amount), 0);
@@ -110,6 +164,40 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
   // redundant installment for money that's already on the plan.
   const scheduledUnpaid = rows.filter(r => r.status !== 'paid').reduce((s, r) => s + Number(r.amount), 0);
   const collectable = Math.max(0, outstanding - scheduledUnpaid);
+
+  // Per-row display: walk the schedule in order accumulating planned money on top
+  // of the down payment. A row whose money begins at/after the total fee is an
+  // EXTRA top-up (collected once the plan was already fully covered) — label it
+  // "Extra" instead of folding it into the n/N plan numbering. The rest are
+  // numbered against the count of real plan installments so denominators stay
+  // consistent (no "4/4" sitting next to "x/3").
+  const planCount = (() => {
+    let cum = downPayment;
+    let n = 0;
+    for (const r of rows) {
+      const isExtra = totalFee > 0 && cum >= totalFee - 1;
+      if (!isExtra) n += 1;
+      cum += Number(r.amount);
+    }
+    return n;
+  })();
+  const labeledRows = (() => {
+    let cum = downPayment;
+    let planIdx = 0;
+    return rows.map((r) => {
+      const isExtra = totalFee > 0 && cum >= totalFee - 1;
+      cum += Number(r.amount);
+      if (isExtra) return { row: r, isExtra: true, label: 'Extra' };
+      planIdx += 1;
+      return { row: r, isExtra: false, label: `${planIdx}/${planCount}` };
+    });
+  })();
+
+  const labelByEmiId = new Map(labeledRows.map((l) => [l.row.id, l.label] as const));
+  // Plan-only EMI counts (exclude extra top-ups) for the KPI subtitles.
+  const planPaidCount = labeledRows.filter((l) => !l.isExtra && l.row.status === 'paid').length;
+  const planUnpaidCount = labeledRows.filter((l) => !l.isExtra && l.row.status !== 'paid').length;
+  const extraCount = rows.length - planCount;
 
   if (!loaded) return <div className="text-[13px] text-ink-500">Loading…</div>;
 
@@ -137,10 +225,10 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
     <div className="space-y-5">
       {/* KPI strip */}
       <div className="grid grid-cols-4 gap-3">
-        <Kpi label="Total fee" value={fmtINR(totalFee)} sub={rows.length ? `${rows.length} installments + downpayment` : 'down payment only'} onEdit={() => setSetupOpen(true)} />
+        <Kpi label="Total fee" value={fmtINR(totalFee)} sub={planCount ? `${planCount} installments + downpayment${extraCount > 0 ? ` · ${extraCount} extra` : ''}` : 'down payment only'} onEdit={() => setSetupOpen(true)} />
         <Kpi label="Down payment" value={fmtINR(downPayment)} sub={student?.down_payment_date ? `paid ${fmtDate(student.down_payment_date)}` : downPayment > 0 ? 'paid' : 'not set'} tone={downPayment > 0 ? 'good' : 'neutral'} onEdit={() => setSetupOpen(true)} />
-        <Kpi label="Paid so far" value={fmtINR(totalPaid)} sub={`${rows.filter(r=>r.status==='paid').length} of ${rows.length} EMIs paid`} tone="good" />
-        <Kpi label="Outstanding" value={fmtINR(outstanding)} sub={rows.filter(r => r.status !== 'paid').length + ' EMIs left'} tone={outstanding > 0 ? 'warn' : 'good'} />
+        <Kpi label="Paid so far" value={fmtINR(totalPaid)} sub={`${planPaidCount} of ${planCount} EMIs paid${extraCount > 0 ? ` + ${extraCount} extra` : ''}`} tone="good" />
+        <Kpi label="Outstanding" value={fmtINR(outstanding)} sub={`${planUnpaidCount} EMI${planUnpaidCount === 1 ? '' : 's'} left`} tone={outstanding > 0 ? 'warn' : 'good'} />
       </div>
 
       {/* Collect a payment toward the balance with an editable amount */}
@@ -265,7 +353,10 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           <div className="px-4 py-2.5 border-b border-ink-100 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="text-[12px] font-semibold text-ink-700">EMI schedule</div>
-              <span className="text-[11px] text-ink-500">{rows.length} installments</span>
+              <span className="text-[11px] text-ink-500">
+                {planCount} installment{planCount === 1 ? '' : 's'}
+                {rows.length - planCount > 0 ? ` · ${rows.length - planCount} extra` : ''}
+              </span>
             </div>
             <div className="flex items-center gap-3">
               {!student?.payment_link && (
@@ -288,9 +379,18 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           <div className="grid grid-cols-[60px_1fr_120px_140px_220px] gap-3 px-4 py-2 border-b border-ink-100 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">
             <div>#</div><div>Amount</div><div>Due date</div><div>Status</div><div className="text-right">Action</div>
           </div>
-          {rows.map((r) => (
+          {labeledRows.map(({ row: r, isExtra, label }) => (
             <div key={r.id} className="grid grid-cols-[60px_1fr_120px_140px_220px] gap-3 px-4 py-3 items-center border-b border-ink-100 last:border-0 text-[13px]">
-              <div className="font-mono text-[12px] text-ink-700">{r.installment_no}/{r.installments_total}</div>
+              {isExtra ? (
+                <span
+                  className="inline-flex items-center px-1.5 h-5 rounded bg-amber-100 text-amber-700 text-[10px] font-semibold tracking-wide w-fit"
+                  title="Collected after the plan was fully covered — extra amount"
+                >
+                  Extra
+                </span>
+              ) : (
+                <div className="font-mono text-[12px] text-ink-700">{label}</div>
+              )}
               <div className="font-semibold">{fmtINR(Number(r.amount))}</div>
               <div className="text-ink-600">{fmtDate(r.due_date)}</div>
               <div><StatusPill status={r.status} /></div>
@@ -346,6 +446,20 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                         {busyCashfree === r.id ? 'Generating…' : 'Get link'}
                       </button>
                     )}
+                    {(r as any).cashfree_link_id && (
+                      <>
+                        <span className="text-ink-300">·</span>
+                        <button
+                          onClick={() => syncCashfreeStatus(r.id)}
+                          disabled={busySync === r.id}
+                          className="text-[11.5px] font-medium text-ink-600 hover:text-ink-900 inline-flex items-center gap-1 disabled:opacity-50"
+                          title="Check the live Cashfree status and mark paid if the student has already paid"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${busySync === r.id ? 'animate-spin' : ''}`} />
+                          {busySync === r.id ? 'Syncing…' : 'Sync'}
+                        </button>
+                      </>
+                    )}
                     <span className="text-ink-300">·</span>
                     <button
                       onClick={() => setReminderEmi(r.id)}
@@ -396,7 +510,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           onClose={() => setEditEmi(null)}
           onSaved={load}
           emiId={editEmi.id}
-          installmentLabel={`${editEmi.installment_no}/${editEmi.installments_total}`}
+          installmentLabel={labelByEmiId.get(editEmi.id) ?? `${editEmi.installment_no}/${editEmi.installments_total}`}
           initialAmount={Number(editEmi.amount)}
           initialPaidDate={editEmi.paid_date ?? new Date().toISOString().slice(0, 10)}
           initialMode={(editEmi as any).payment_mode ?? 'UPI'}
@@ -410,7 +524,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           onSaved={load}
           emiId={payEmi.id}
           amount={Number(payEmi.amount)}
-          installmentLabel={`${payEmi.installment_no}/${payEmi.installments_total}`}
+          installmentLabel={labelByEmiId.get(payEmi.id) ?? `${payEmi.installment_no}/${payEmi.installments_total}`}
         />
       )}
       {setupOpen && <EmiSetupModal studentId={studentId} onClose={() => setSetupOpen(false)} onSaved={load} />}
