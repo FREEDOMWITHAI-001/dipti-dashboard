@@ -362,6 +362,7 @@ insert into public.reminder_events (id, name, recipient_type, schedule, enabled)
   ('reminder.failed',      'Admin: reminder failure',          'admin',   'On event',    false)
 on conflict (id) do nothing;
 
+
 -- Sample students (only inserted if students table is empty)
 do $$
 declare student_count int;
