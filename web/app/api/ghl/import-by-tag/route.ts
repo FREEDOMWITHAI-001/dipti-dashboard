@@ -95,12 +95,32 @@ export async function POST(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (obj: unknown) => controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
-      let imported = 0, updated = 0, processed = 0, startAfterId: string | undefined;
+      let imported = 0, updated = 0, processed = 0;
+      let startAfterId: string | undefined, startAfter: string | number | undefined;
+
+      // GHL's search windows can overlap (the cursor is not perfectly stable),
+      // which would otherwise reprocess the same contacts and inflate the
+      // counts well past the real number of students. Track every contact id we
+      // have already handled so each distinct contact is counted and written
+      // exactly once, and so we can stop as soon as a page brings nothing new.
+      const seenIds = new Set<string>();
+      // Several GHL contacts can share one email (the same student). Count and
+      // write each email only once so "Updated" reflects distinct students, not
+      // raw contact rows.
+      const seenEmails = new Set<string>();
+      const MAX_PAGES = 500; // backstop against a non-advancing cursor
+      let pageNo = 0;
 
       try {
         while (true) {
-          const page = await ghlSearchContactsByTag(tag, 100, startAfterId);
-          const contacts = page.contacts ?? [];
+          const page = await ghlSearchContactsByTag(tag, 100, startAfterId, startAfter);
+          const all = page.contacts ?? [];
+          if (!all.length) break;
+
+          // Drop contacts we have already seen on an earlier (overlapping) page.
+          const contacts = all.filter((c) => c.id && !seenIds.has(c.id));
+          for (const c of all) if (c.id) seenIds.add(c.id);
+          // Every contact on this page was a duplicate → the cursor is looping; stop.
           if (!contacts.length) break;
           processed += contacts.length;
 
@@ -119,6 +139,9 @@ export async function POST(req: Request) {
           for (const c of contacts) {
             if (!c.email) continue;
             const email = c.email.toLowerCase();
+            // Already handled on an earlier page (a duplicate-email contact) →
+            // skip so it is neither rewritten nor double-counted.
+            if (seenEmails.has(email)) continue;
             const tags = filterDvaTags(c.tags);
             const prev = byEmail.get(email);
             if (prev) {
@@ -128,6 +151,7 @@ export async function POST(req: Request) {
               byEmail.set(email, { email, tags, c });
             }
           }
+          for (const email of byEmail.keys()) seenEmails.add(email);
 
           const emails = Array.from(byEmail.keys());
           if (emails.length) {
@@ -177,8 +201,18 @@ export async function POST(req: Request) {
           // Push the running totals to the client after each page.
           send({ type: 'progress', imported, updated, processed });
 
-          startAfterId = page.meta?.startAfterId ?? page.contacts[page.contacts.length - 1]?.id;
-          if (!startAfterId || contacts.length < 100) break;
+          // Advance the compound cursor from the LAST raw contact on the page
+          // (meta values win when GHL provides them).
+          const last = all[all.length - 1];
+          const nextId = page.meta?.startAfterId ?? last?.id;
+          const nextAfter = page.meta?.startAfter ?? last?.dateAdded ?? undefined;
+          // GHL returned a full page but no usable cursor, or the cursor did not
+          // move — either way we cannot make progress, so stop.
+          if (!nextId || (nextId === startAfterId && nextAfter === startAfter)) break;
+          startAfterId = nextId;
+          startAfter = nextAfter ?? undefined;
+          if (all.length < 100) break;
+          if (++pageNo >= MAX_PAGES) break;
         }
 
         await admin.from('ghl_settings').update({ last_full_sync: new Date().toISOString() }).eq('id', 1);

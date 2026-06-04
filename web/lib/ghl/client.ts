@@ -35,7 +35,7 @@ async function ghl(path: string, opts: RequestInit = {}): Promise<any> {
 }
 
 export async function ghlSearchContactsByTag(
-  tag: string, limit = 100, startAfterId?: string
+  tag: string, limit = 100, startAfterId?: string, startAfter?: string | number
 ): Promise<GhlContactsResponse> {
   const { locationId } = await getRuntimeSettings();
   if (!locationId) throw new GhlError(400, 'GHL_LOCATION_ID not configured.');
@@ -45,6 +45,10 @@ export async function ghlSearchContactsByTag(
     limit: String(limit),
     query: tag,
   });
+  // GHL's contacts search uses a compound cursor — startAfter (ms timestamp) +
+  // startAfterId. Sending only the id makes consecutive pages overlap, which
+  // reprocesses the same contacts. Thread both through.
+  if (startAfter != null) params.set('startAfter', String(startAfter));
   if (startAfterId) params.set('startAfterId', startAfterId);
   return ghl(`/contacts/?${params.toString()}`);
 }
