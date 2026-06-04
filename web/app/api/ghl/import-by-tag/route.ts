@@ -3,6 +3,15 @@ import { supabaseServer } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { ghlSearchContactsByTag } from '@/lib/ghl/client';
 
+// This is a bulk job that paginates the whole GHL account. Run it on the Node
+// runtime and allow it the full request budget so a large account doesn't get
+// the function killed mid-import — when that happened the client never received
+// the { imported, updated } result, so the modal could not report success or
+// counts. maxDuration is capped by the hosting plan (Vercel Pro = 300s); the
+// batched writes below keep a normal import well under that.
+export const runtime = 'nodejs';
+export const maxDuration = 300;
+
 // POST /api/ghl/import-by-tag
 // body: { tag: string }
 // Paginates through GHL contacts with the given tag and upserts them into students.
