@@ -26,12 +26,13 @@ returns trigger
 language plpgsql
 as $$
 declare
-  v_delta        numeric;
-  v_count        int;
-  v_idx          int := 0;
-  v_share        numeric;
-  v_distributed  numeric := 0;
-  v_remaining    record;
+  v_delta      numeric;
+  v_count      int;
+  v_idx        int := 0;
+  v_share      numeric;
+  v_left       numeric;   -- amount still to spread (carried forward row to row)
+  v_remaining  record;
+  v_new        numeric;
 begin
   -- Only act on the transition INTO 'paid', and only for EMIs that were edited
   -- before their link was generated (original_amount holds the plan amount).
@@ -53,9 +54,13 @@ begin
         and status not in ('paid', 'cancelled');
 
       if v_count > 0 then
-        -- Remove v_delta from the remaining rows, split evenly. Each row except
-        -- the last takes round(v_delta / count); the last takes whatever is left
-        -- so the totals reconcile exactly. Amounts are floored at 0.
+        -- Spread v_delta across the remaining rows. We re-divide the amount that
+        -- is STILL LEFT over the rows STILL REMAINING each step, so when a small
+        -- row can't absorb its full share the shortfall is CARRIED FORWARD to
+        -- later rows instead of being silently dropped at the 0 floor. This keeps
+        -- the plan total exact whenever the remaining rows can collectively
+        -- absorb the change (the "Get link" screen blocks edits that can't).
+        v_left := v_delta;
         for v_remaining in
           select id, amount
           from public.emi_schedule
@@ -66,16 +71,26 @@ begin
         loop
           v_idx := v_idx + 1;
           if v_idx < v_count then
-            v_share := round(v_delta / v_count);   -- amount removed from this row
+            v_share := round(v_left / (v_count - v_idx + 1));
           else
-            v_share := v_delta - v_distributed;    -- remainder on the last row
+            v_share := v_left;   -- last remaining row takes whatever is left
           end if;
-          v_distributed := v_distributed + v_share;
 
-          update public.emi_schedule
-            set amount = greatest(coalesce(v_remaining.amount, 0) - v_share, 0)
-            where id = v_remaining.id;
+          v_new := coalesce(v_remaining.amount, 0) - v_share;
+          if v_new < 0 then
+            -- This row can't give back its whole share; take only what it has and
+            -- carry the rest to the next row.
+            v_share := coalesce(v_remaining.amount, 0);
+            v_new := 0;
+          end if;
+
+          update public.emi_schedule set amount = v_new where id = v_remaining.id;
+          v_left := v_left - v_share;
         end loop;
+        -- If v_left <> 0 after the loop, the remaining rows genuinely couldn't
+        -- absorb the whole change (an increase bigger than the remaining balance).
+        -- We leave the rows floored at 0 rather than make one negative; the UI
+        -- prevents this case up front.
       end if;
     end if;
   end if;

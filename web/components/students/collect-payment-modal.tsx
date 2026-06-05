@@ -106,7 +106,12 @@ export function CollectPaymentModal({
     // ── Record received: allocate the money across existing unpaid EMIs ──
     if (method === 'received') {
       const { fullyPaid, split, surplus } = planAllocation(amount, unpaidEmis);
-      const paidPatch: any = { status: 'paid', paid_date: paidDate, payment_mode: mode };
+      // Clear original_amount on every row we settle here so the redistribution
+      // trigger does NOT fire during a lump-sum allocation. A "Collect payment"
+      // already decides exactly how the money lands across installments; letting
+      // the per-row trigger also rewrite sibling amounts mid-batch would scramble
+      // that allocation. (Single-EMI mark-paid still redistributes normally.)
+      const paidPatch: any = { status: 'paid', paid_date: paidDate, payment_mode: mode, original_amount: null };
       if (reference.trim()) paidPatch.payment_link = reference.trim();
 
       try {

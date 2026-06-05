@@ -65,7 +65,12 @@ export function EditEmiLinkModal({
 
   const delta = amount - planAmount;
   const isLast = remainingEmis.length === 0;
-  const preview = delta !== 0 && !isLast ? previewRedistribution(delta, remainingEmis) : [];
+  const remainingSum = remainingEmis.reduce((s, e) => s + e.amount, 0);
+  // An increase bigger than what the remaining unpaid EMIs can give back can't be
+  // absorbed without driving one of them negative — which would silently break the
+  // plan total. Block it and tell the coach the most they can set.
+  const exceedsCapacity = !isLast && delta > remainingSum;
+  const preview = delta !== 0 && !isLast && !exceedsCapacity ? previewRedistribution(delta, remainingEmis) : [];
 
   function copy(text: string) {
     navigator.clipboard.writeText(text)
@@ -76,6 +81,10 @@ export function EditEmiLinkModal({
   async function submit() {
     if (busy) return;
     if (!(amount > 0)) { toast('Enter an amount greater than 0.', 'error'); return; }
+    if (exceedsCapacity) {
+      toast(`Too large — the remaining EMIs can only absorb ${fmtINR(remainingSum)} more.`, 'error');
+      return;
+    }
     setBusy(true);
 
     // Save the new amount + remember the plan amount for the trigger to use when
@@ -173,6 +182,19 @@ export function EditEmiLinkModal({
                 </div>
               )}
 
+              {/* Increase larger than the remaining EMIs can absorb — would break the total. */}
+              {exceedsCapacity && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50/70 px-3 py-2.5 text-[12px] text-rose-800 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-rose-600" />
+                  <div>
+                    Increase is too large to rebalance. The remaining {remainingEmis.length}{' '}
+                    installment{remainingEmis.length === 1 ? '' : 's'} can absorb at most{' '}
+                    <span className="font-semibold">{fmtINR(remainingSum)}</span>, so the most you can
+                    set here is <span className="font-semibold">{fmtINR(planAmount + remainingSum)}</span>.
+                  </div>
+                </div>
+              )}
+
               {/* Live preview of how the remaining EMIs rebalance once this is paid. */}
               {preview.length > 0 && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 text-[12px] space-y-1">
@@ -196,7 +218,7 @@ export function EditEmiLinkModal({
 
             <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-ink-100">
               <Button type="button" onClick={onClose} disabled={busy}>Cancel</Button>
-              <Button variant="primary" onClick={submit} disabled={busy}>
+              <Button variant="primary" onClick={submit} disabled={busy || exceedsCapacity}>
                 {busy
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating link…</>
                   : <><LinkIcon className="w-3.5 h-3.5" /> Create link for {fmtINR(amount)}</>}
