@@ -11,6 +11,7 @@ import { ReminderModal } from '@/components/reminders/reminder-modal';
 import { EmiSetupModal } from './emi-setup-modal';
 import { MarkPaidModal } from './mark-paid-modal';
 import { EditPaymentModal } from './edit-payment-modal';
+import { EditDueDateModal } from './edit-due-date-modal';
 import { ChangePaymentLinkModal } from './change-payment-link-modal';
 import { CollectPaymentModal } from './collect-payment-modal';
 import { EditEmiLinkModal } from './edit-emi-link-modal';
@@ -37,6 +38,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
   const [linkEmi, setLinkEmi] = useState<Emi | null>(null);
+  const [dueDateEmi, setDueDateEmi] = useState<Emi | null>(null);
   const [busySync, setBusySync] = useState<string | null>(null);
   const [paymentIdsByEmi, setPaymentIdsByEmi] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
@@ -474,6 +476,14 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                     )}
                     <span className="text-ink-300">·</span>
                     <button
+                      onClick={() => setDueDateEmi(r)}
+                      className="text-[11.5px] font-medium text-ink-600 hover:text-ink-900 inline-flex items-center gap-1"
+                      title="Change this installment's due date (this EMI only)"
+                    >
+                      <Pencil className="w-3 h-3" /> Date
+                    </button>
+                    <span className="text-ink-300">·</span>
+                    <button
                       onClick={() => setReminderEmi(r.id)}
                       className="text-[11.5px] font-medium text-ink-600 hover:text-ink-900 hover:underline"
                     >
@@ -552,6 +562,16 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           remainingEmis={unpaidEmisForCollect
             .filter((e) => e.id !== linkEmi.id)
             .map((e) => ({ id: e.id, label: e.label, amount: e.amount }))}
+        />
+      )}
+      {dueDateEmi && (
+        <EditDueDateModal
+          open={!!dueDateEmi}
+          onClose={() => setDueDateEmi(null)}
+          onSaved={load}
+          emiId={dueDateEmi.id}
+          installmentLabel={labelByEmiId.get(dueDateEmi.id) ?? `${dueDateEmi.installment_no}/${dueDateEmi.installments_total}`}
+          initialDueDate={String(dueDateEmi.due_date).slice(0, 10)}
         />
       )}
       {collectOpen && (
