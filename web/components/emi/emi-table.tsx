@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Send, CheckCircle2, Zap } from 'lucide-react';
 import { StudentAvatar } from '@/components/ui/avatar';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -41,19 +41,31 @@ const TABS: Array<{ key: TabKey; label: string; filter: (r: Row) => boolean }> =
   { key: 'paid',    label: 'Paid',          filter: r => r.status === 'paid' },
 ];
 
+const TAB_KEYS: TabKey[] = ['due', 'overdue', 'upcoming', 'paid'];
+
 export function EmiTable({ rows, initialTab = 'due' }: { rows: Row[]; initialTab?: TabKey }) {
   const router = useRouter();
-  const [tab, setTab] = useState<TabKey>(initialTab);
+  const params = useSearchParams();
+  // Drive the active tab from the URL so the KPI cards (which switch tabs via
+  // history.pushState, not a server navigation) update the table without a full
+  // page refetch — the table already holds every row and filters client-side.
+  const tabParam = params.get('tab');
+  const urlTab: TabKey = (TAB_KEYS as string[]).includes(tabParam ?? '') ? (tabParam as TabKey) : initialTab;
+  const [tab, setTab] = useState<TabKey>(urlTab);
   const [reminder, setReminder] = useState<{ studentId: string; emiId: string } | null>(null);
   const [payRow, setPayRow] = useState<Row | null>(null);
 
-  useEffect(() => { setTab(initialTab); }, [initialTab]);
+  useEffect(() => { setTab(urlTab); }, [urlTab]);
 
   const filtered = rows.filter(TABS.find(t => t.key === tab)!.filter);
 
   function switchTab(k: TabKey) {
     setTab(k);
-    router.push(`/emi?tab=${k}` as any, { scroll: false });
+    // Update the URL in place (no server re-render / refetch). Preserve any other
+    // params already present.
+    const next = new URLSearchParams(params.toString());
+    next.set('tab', k);
+    window.history.pushState(null, '', `/emi?${next.toString()}`);
   }
 
   return (

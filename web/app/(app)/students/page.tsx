@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabase/server';
 import { KpiCard } from '@/components/ui/kpi-card';
+import { FilterLink } from '@/components/ui/filter-link';
 import { StudentsTable } from '@/components/students/students-table';
 import { StudentsActions } from '@/components/students/students-actions';
 import { selectAllRows } from '@/lib/utils';
@@ -110,15 +111,15 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
       </div>
 
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <Link href={'/students?filter=all' as any}      className="kpi-link" data-active={activeFilter === 'all'}>
+        <FilterLink param="filter" value="all" defaultValue="all" className="kpi-link">
           <KpiCard label="Total students" value={String(total)} sub="all-time" icon="Users" />
-        </Link>
-        <Link href={'/students?filter=active' as any}   className="kpi-link" data-active={activeFilter === 'active'}>
+        </FilterLink>
+        <FilterLink param="filter" value="active" defaultValue="all" className="kpi-link">
           <KpiCard label="Active" value={String(activeCount)} sub="currently enrolled" tone="good" icon="CircleCheck" />
-        </Link>
-        <Link href={'/students?filter=expiring' as any} className="kpi-link" data-active={activeFilter === 'expiring'}>
+        </FilterLink>
+        <FilterLink param="filter" value="expiring" defaultValue="all" className="kpi-link">
           <KpiCard label="Expiring · 30 d" value={String(expiringCount)} sub="renew window" tone="warn" icon="Clock" />
-        </Link>
+        </FilterLink>
         <Link href={'/emi?tab=overdue' as any}          className="kpi-link">
           <KpiCard label="EMI overdue" value={String(overdueCount ?? 0)} sub={'₹' + Math.round(totalOverdue).toLocaleString('en-IN') + ' due'} tone="risk" icon="TriangleAlert" />
         </Link>

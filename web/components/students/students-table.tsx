@@ -36,12 +36,17 @@ export function StudentsTable({
 }) {
   const router = useRouter();
   const params = useSearchParams();
+  // The active status filter comes from the URL (?filter=). KPI cards now switch
+  // it via history.pushState (no server navigation), so reading it from
+  // useSearchParams makes the list react instantly without a full page refetch.
+  // Falls back to the server-provided initialFilter on first paint.
+  const urlFilter = ((params.get('filter') as InitialFilter | null) ?? initialFilter);
   const [students, setStudents] = useState(initialStudents);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [memberships, setMemberships] = useState<Set<string>>(new Set());
   const [statuses, setStatuses] = useState<Set<StatusKey>>(
-    initialFilter !== 'all' ? new Set([initialFilter]) : new Set()
+    urlFilter && urlFilter !== 'all' ? new Set([urlFilter as StatusKey]) : new Set()
   );
   const [tagSel, setTagSel] = useState<Set<string>>(new Set());
   const [emiFilter, setEmiFilter] = useState<Set<string>>(new Set());
@@ -55,8 +60,8 @@ export function StudentsTable({
   useEffect(() => { setStudents(initialStudents); }, [initialStudents]);
 
   useEffect(() => {
-    setStatuses(initialFilter !== 'all' ? new Set([initialFilter]) : new Set());
-  }, [initialFilter]);
+    setStatuses(urlFilter && urlFilter !== 'all' ? new Set([urlFilter as StatusKey]) : new Set());
+  }, [urlFilter]);
 
   useEffect(() => {
     const ch = sb.channel('students-list')

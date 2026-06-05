@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { supabaseServer } from '@/lib/supabase/server';
 import { KpiCard } from '@/components/ui/kpi-card';
+import { FilterLink } from '@/components/ui/filter-link';
 import { EmiTable } from '@/components/emi/emi-table';
 import { EmiActions } from '@/components/emi/emi-actions';
 import { requirePermission } from '@/lib/check-permission';
@@ -93,18 +93,18 @@ export default async function EmiPage({ searchParams }: { searchParams: { tab?: 
       </div>
 
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <Link href={'/emi?tab=due' as any}      className="kpi-link" data-active={activeTab === 'due'}>
+        <FilterLink param="tab" value="due" defaultValue="due" className="kpi-link">
           <KpiCard label="Due this week" value={'₹' + Math.round(dueAmount).toLocaleString('en-IN')} sub={`${dueStudents} student${dueStudents === 1 ? '' : 's'}`} tone="warn" icon="Clock" />
-        </Link>
-        <Link href={'/emi?tab=overdue' as any}  className="kpi-link" data-active={activeTab === 'overdue'}>
+        </FilterLink>
+        <FilterLink param="tab" value="overdue" defaultValue="due" className="kpi-link">
           <KpiCard label="Overdue" value={'₹' + Math.round(overdueAmount).toLocaleString('en-IN')} sub={`${overdueStudents} student${overdueStudents === 1 ? '' : 's'}`} tone="risk" icon="TriangleAlert" />
-        </Link>
-        <Link href={'/emi?tab=upcoming' as any} className="kpi-link" data-active={activeTab === 'upcoming'}>
+        </FilterLink>
+        <FilterLink param="tab" value="upcoming" defaultValue="due" className="kpi-link">
           <KpiCard label="Upcoming" value={String(upcoming.length)} sub="future installments" icon="List" />
-        </Link>
-        <Link href={'/emi?tab=paid' as any}     className="kpi-link" data-active={activeTab === 'paid'}>
+        </FilterLink>
+        <FilterLink param="tab" value="paid" defaultValue="due" className="kpi-link">
           <KpiCard label="Collected MTD" value={'₹' + Math.round(collectedMtd).toLocaleString('en-IN')} sub={collectedSub} tone={collectedTone} icon="TrendingUp" />
-        </Link>
+        </FilterLink>
       </div>
 
       <EmiTable rows={all as any} initialTab={activeTab} />
