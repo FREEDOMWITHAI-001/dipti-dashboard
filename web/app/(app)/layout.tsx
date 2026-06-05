@@ -48,6 +48,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     calls: callsQueue ?? 0,
   };
 
+  const canDeleteStudents = !!sessionUser && (
+    sessionUser.role === 'admin' || sessionUser.permissions.includes('delete-students')
+  );
+
   return (
     <div className="h-screen flex bg-ink-50/30 overflow-hidden">
       <Sidebar user={sessionUser} badges={badges} />
@@ -56,7 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
       </div>
       <Suspense>
-        <StudentSlideover />
+        <StudentSlideover canDelete={canDeleteStudents} />
       </Suspense>
     </div>
   );

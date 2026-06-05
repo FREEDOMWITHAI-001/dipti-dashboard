@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Search, ChevronLeft, ChevronRight, ChevronDown, Check, Phone, IndianRupee } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, ChevronDown, Check, Phone, IndianRupee, Trash2, Loader2 } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase/client';
+import { useToast } from '@/components/shell/toast-region';
 import { StudentAvatar } from '@/components/ui/avatar';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtDateShort, daysFromNow, studentStatusFromEnd, achievementTags } from '@/lib/utils';
@@ -26,6 +27,7 @@ export function StudentsTable({
   lastCallByStudent = {},
   lastPaymentByStudent = {},
   emiStatusByStudent = {},
+  canDelete = false,
 }: {
   initialStudents: Row[];
   totalCount: number;
@@ -33,9 +35,14 @@ export function StudentsTable({
   lastCallByStudent?: Record<string, string>;
   lastPaymentByStudent?: Record<string, { mode: string; date: string }>;
   emiStatusByStudent?: Record<string, { paid: number; total: number; overdue: number; upcoming: number }>;
+  canDelete?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   // The active status filter comes from the URL (?filter=). KPI cards now switch
   // it via history.pushState (no server navigation), so reading it from
   // useSearchParams makes the list react instantly without a full page refetch.
@@ -159,6 +166,52 @@ export function StudentsTable({
     window.history.pushState(null, '', `?${p.toString()}`);
   }
 
+  // ── Multi-select + bulk delete (only when the user may delete) ──
+  const gridCols = canDelete
+    ? 'grid-cols-[28px_36px_1.4fr_0.9fr_1fr_0.7fr_0.7fr_0.9fr_0.55fr]'
+    : GRID_COLS;
+  const pageIds = pageRows.map((s) => s.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function toggleSelectPage() {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (allPageSelected) pageIds.forEach((id) => n.delete(id));
+      else pageIds.forEach((id) => n.add(id));
+      return n;
+    });
+  }
+  async function bulkDelete() {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/students/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json().catch(() => ({}));
+      const n = data.count ?? ids.length;
+      toast(`${n} student${n === 1 ? '' : 's'} deleted.`, 'success');
+      setSelected(new Set());
+      setConfirmBulk(false);
+      router.refresh();
+    } catch (e: any) {
+      toast(e?.message ?? 'Failed to delete', 'error');
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   const filterBanner =
     statuses.size === 1
       ? (statuses.has('active') ? 'Active students'
@@ -248,7 +301,33 @@ export function StudentsTable({
         </div>
       )}
 
-      <div className={cn('grid gap-3 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100', GRID_COLS)}>
+      {canDelete && selected.size > 0 && (
+        <div className="px-5 py-2 bg-rose-50/60 border-b border-rose-100 flex items-center gap-2 text-[12.5px]">
+          <span className="font-medium text-rose-800">{selected.size} selected</span>
+          <button
+            onClick={() => setConfirmBulk(true)}
+            className="h-7 px-2.5 rounded-md bg-rose-600 text-white text-[12px] font-medium hover:bg-rose-700 inline-flex items-center gap-1"
+          >
+            <Trash2 className="w-3 h-3" /> Delete selected
+          </button>
+          <button onClick={() => setSelected(new Set())} className="ml-auto text-ink-500 hover:text-ink-800 text-[12px]">
+            Clear selection ✕
+          </button>
+        </div>
+      )}
+
+      <div className={cn('grid gap-3 px-6 py-2.5 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold border-b border-ink-100', gridCols)}>
+        {canDelete && (
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              checked={allPageSelected}
+              onChange={toggleSelectPage}
+              aria-label="Select all on this page"
+              className="w-3.5 h-3.5 rounded border-ink-300 accent-rose-600 cursor-pointer"
+            />
+          </div>
+        )}
         <div />
         <div>Student</div>
         <div>Membership</div>
@@ -270,11 +349,25 @@ export function StudentsTable({
           const lastPayment = lastPaymentByStudent[s.id];
 
           return (
-            <button
+            <div
               key={s.id}
+              role="button"
+              tabIndex={0}
               onClick={() => openStudent(s.id)}
-              className={cn('row-clickable w-full text-left grid gap-3 px-6 py-3.5 items-center border-b border-ink-100 last:border-0', GRID_COLS)}
+              onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); openStudent(s.id); } }}
+              className={cn('row-clickable w-full text-left grid gap-3 px-6 py-3.5 items-center border-b border-ink-100 last:border-0 cursor-pointer', gridCols)}
             >
+              {canDelete && (
+                <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(s.id)}
+                    onChange={() => toggleSelect(s.id)}
+                    aria-label={`Select ${s.first_name ?? ''} ${s.last_name ?? ''}`.trim()}
+                    className="w-3.5 h-3.5 rounded border-ink-300 accent-rose-600 cursor-pointer"
+                  />
+                </div>
+              )}
               <StudentAvatar first={s.first_name} last={s.last_name} size={30} />
               <div className="min-w-0 overflow-hidden">
                 <div className="font-medium text-[13.5px] truncate">{s.first_name} {s.last_name}</div>
@@ -338,7 +431,7 @@ export function StudentsTable({
               <div className="flex items-center justify-end min-w-0">
                 <StatusPill status={studentStatusFromEnd((s as any).course_end_date)} />
               </div>
-            </button>
+            </div>
           );
         })}
         {pageRows.length === 0 && (
@@ -379,6 +472,37 @@ export function StudentsTable({
           ><ChevronRight className="w-3.5 h-3.5" /></button>
         </div>
       </div>
+
+      {confirmBulk && (
+        <div className="fixed inset-0 z-[100] grid place-items-center px-4">
+          <div onClick={() => !bulkBusy && setConfirmBulk(false)} className="absolute inset-0 bg-black/50" />
+          <div className="relative bg-white rounded-2xl shadow-pop w-full max-w-[400px] p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full grid place-items-center shrink-0 bg-rose-50 text-rose-600">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1 pt-1">
+                <div className="text-[16px] font-semibold text-ink-900 leading-tight">
+                  Delete {selected.size} student{selected.size === 1 ? '' : 's'}?
+                </div>
+                <div className="text-[13px] text-ink-600 mt-1.5 leading-snug">
+                  They&apos;ll be removed from the list. Payment history and records are kept and can be restored later.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button onClick={() => setConfirmBulk(false)} disabled={bulkBusy}
+                className="h-9 px-4 rounded-lg border border-ink-200 text-[13px] font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={bulkDelete} disabled={bulkBusy}
+                className="h-9 px-5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[13px] font-medium disabled:opacity-50 inline-flex items-center gap-1.5">
+                {bulkBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting…</> : `Delete ${selected.size}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

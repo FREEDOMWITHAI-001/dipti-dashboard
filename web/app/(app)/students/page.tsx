@@ -5,6 +5,7 @@ import { FilterLink } from '@/components/ui/filter-link';
 import { StudentsTable } from '@/components/students/students-table';
 import { StudentsActions } from '@/components/students/students-actions';
 import { selectAllRows } from '@/lib/utils';
+import { getMyPermissions } from '@/lib/check-permission';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,6 +93,10 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
     }
   }
 
+  // Delete (single + bulk) is gated: admins always, or coaches granted it.
+  const { isAdmin, has } = await getMyPermissions();
+  const canDelete = isAdmin || has('delete-students');
+
   const total = count ?? 0;
   const now = Date.now();
   // Use course_end_date (what the table/filters use), falling back to end_date,
@@ -137,6 +142,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: { f
         lastCallByStudent={lastCallByStudent}
         lastPaymentByStudent={lastPaymentByStudent}
         emiStatusByStudent={emiStatusByStudent}
+        canDelete={canDelete}
       />
     </div>
   );

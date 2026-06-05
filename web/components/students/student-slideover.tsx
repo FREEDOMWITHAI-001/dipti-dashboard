@@ -21,7 +21,7 @@ import type { Database } from '@/types/database';
 type Student = Database['public']['Tables']['students']['Row'];
 type Tab = 'profile' | 'progress' | 'calls' | 'payments' | 'ai' | 'achievements';
  
-export function StudentSlideover() {
+export function StudentSlideover({ canDelete = false }: { canDelete?: boolean }) {
   const params = useSearchParams();
   const id = params.get('student');
   const [open, setOpen] = useState(false);
@@ -94,15 +94,21 @@ export function StudentSlideover() {
   async function deleteStudent() {
     if (!student) return;
     setDeleting(true);
-    const { error } = await sb
-      .from('students')
-      .update({ deleted_at: new Date().toISOString() } as any)
-      .eq('id', student.id);
-    setDeleting(false);
-    if (error) { toast(error.message ?? 'Failed to delete student', 'error'); return; }
-    toast(`${student.first_name ?? 'Student'} deleted.`, 'success');
-    setConfirmDelete(false);
-    close();
+    try {
+      const res = await fetch('/api/students/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [student.id] }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast(`${student.first_name ?? 'Student'} deleted.`, 'success');
+      setConfirmDelete(false);
+      close();
+    } catch (e: any) {
+      toast(e?.message ?? 'Failed to delete student', 'error');
+    } finally {
+      setDeleting(false);
+    }
   }
  
   return (
@@ -187,13 +193,15 @@ export function StudentSlideover() {
                 <button onClick={() => setReminderOpen(true)} className="h-9 px-3 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50 flex items-center gap-1.5">
                   <Send className="w-4 h-4" /> Send reminder
                 </button>
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="ml-auto h-9 px-3 rounded-lg border border-rose-200 text-rose-700 text-[13px] font-medium hover:bg-rose-50 flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
-                <div className="flex items-center gap-2 text-[11.5px] text-ink-500">
+                {canDelete && (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="ml-auto h-9 px-3 rounded-lg border border-rose-200 text-rose-700 text-[13px] font-medium hover:bg-rose-50 flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                )}
+                <div className={cn('flex items-center gap-2 text-[11.5px] text-ink-500', !canDelete && 'ml-auto')}>
                   <CheckCheck className="w-3.5 h-3.5 text-ink-400" /> Saved
                 </div>
               </div>

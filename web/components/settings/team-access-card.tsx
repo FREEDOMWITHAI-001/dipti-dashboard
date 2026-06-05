@@ -377,8 +377,9 @@ const ALL_PERMISSIONS = [
   { key: 'comments',   label: 'Comments' },
   { key: 'reports',    label: 'Reports' },
   // Feature permissions (actions, not nav pages)
-  { key: 'ai',             label: 'AI Tools (Briefing, Progress summary, Chat extract)' },
-  { key: 'send-reminders', label: 'Send Reminders / Messages' },
+  { key: 'ai',              label: 'AI Tools (Briefing, Progress summary, Chat extract)' },
+  { key: 'send-reminders',  label: 'Send Reminders / Messages' },
+  { key: 'delete-students', label: 'Delete students (single & bulk)' },
 ];
 
 function InlinePermissionsModal({
