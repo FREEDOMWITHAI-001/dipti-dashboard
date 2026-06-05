@@ -1,6 +1,7 @@
 import { supabaseServer } from '@/lib/supabase/server';
 import { selectAllRows } from '@/lib/utils';
 import { KpiCard } from '@/components/ui/kpi-card';
+import { ReportsDateFilter } from './date-filter';
 import {
   CallsPerWeekChart, CollectionRateChart, ReminderDeliveryChart, StudentFunnelChart,
   CompletionDistributionChart, PerMonthCompletionChart,
@@ -21,21 +22,27 @@ const COLORS = {
   risk:    '#ef4444',
 };
 
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: { preset?: string; from?: string; to?: string } }) {
   const sb = supabaseServer();
   const now = new Date();
 
-  const since12wIso = new Date(now.getTime() - 12 * 7 * 86400000).toISOString();
-  const since6mIso  = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString();
-  const since30dIso = new Date(now.getTime() - 30 * 86400000).toISOString();
+  // Resolve the selected window from the URL (?preset= or ?from=&to=). It drives
+  // the time-based metrics (calls, collection, reminders) and their charts; the
+  // snapshot sections (achievements, completion, funnel) ignore it — they're
+  // current-state counts with no time dimension.
+  const range  = resolveRange(searchParams ?? {}, now);
+  const fromIso = range.from.toISOString();
+  const toIso   = range.to.toISOString();
+  const dueFrom = ymd(range.from);   // emi.due_date is a DATE column → compare by calendar day
+  const dueTo   = ymd(range.to);
 
   // All five reads are paginated (stable .order('id') + .range) so they don't
   // hit the PostgREST 1000-row cap and silently undercount the KPIs/charts.
   const [students, calls, emi, reminders, achievementStudents] = await Promise.all([
     selectAllRows((f, t) => sb.from('students').select('id, end_date, course_end_date, deleted_at').is('deleted_at', null).order('id').range(f, t)),
-    selectAllRows((f, t) => sb.from('call_logs').select('created_at, student_id').gte('created_at', since12wIso).order('id').range(f, t)),
-    selectAllRows((f, t) => sb.from('emi_schedule').select('amount, due_date, status, paid_date').gte('due_date', since6mIso).order('id').range(f, t)),
-    selectAllRows((f, t) => sb.from('reminders').select('event_id, status').gte('created_at', since30dIso).order('id').range(f, t)),
+    selectAllRows((f, t) => sb.from('call_logs').select('created_at, student_id').gte('created_at', fromIso).lte('created_at', toIso).order('id').range(f, t)),
+    selectAllRows((f, t) => sb.from('emi_schedule').select('amount, due_date, status, paid_date').gte('due_date', dueFrom).lte('due_date', dueTo).order('id').range(f, t)),
+    selectAllRows((f, t) => sb.from('reminders').select('event_id, status').gte('created_at', fromIso).lte('created_at', toIso).order('id').range(f, t)),
     selectAllRows((f, t) => sb.from('students').select('id, month_1, month_2, month_3, month_4, month_5, month_6, is_super_baker_finisher, is_super_baker_pending, is_hall_of_fame, is_hall_of_fame_pending, certificate_issued, certificate_pending_manual, bbr_attended, bbr_pending, deleted_at').is('deleted_at', null).order('id').range(f, t)),
   ]);
   
@@ -109,11 +116,11 @@ export default async function ReportsPage() {
 
   // ---------- KPI calculations ----------
   const studentCount  = students?.length ?? 0;
-  const callsLast30   = (calls ?? []).filter((c: any) =>
-    new Date(c.created_at).getTime() > now.getTime() - 30 * 86400000
-  );
+  // calls / reminders / emi are already constrained to the selected range by the
+  // queries above, so each KPI operates on its full fetched set.
+  const callsInRange = (calls ?? []);
   const callsPerStudent = studentCount > 0
-    ? (callsLast30.length / studentCount).toFixed(1)
+    ? (callsInRange.length / studentCount).toFixed(1)
     : '0.0';
 
   const reminderTotal     = (reminders ?? []).length;
@@ -124,49 +131,52 @@ export default async function ReportsPage() {
     ? ((reminderDelivered / reminderTotal) * 100).toFixed(1)
     : '0.0';
 
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const mtdEmis = (emi ?? []).filter((e: any) => {
-    const due = new Date(e.due_date);
-    return due >= monthStart && due < monthEnd;
-  });
-  const mtdDue  = mtdEmis.reduce((s: number, e: any) => s + Number(e.amount), 0);
-  const mtdPaid = mtdEmis.filter((e: any) => e.status === 'paid')
-                          .reduce((s: number, e: any) => s + Number(e.amount), 0);
-  const collectionPct = mtdDue > 0 ? ((mtdPaid / mtdDue) * 100).toFixed(1) : '0.0';
+  const rangeEmis = (emi ?? []);
+  const rangeDue  = rangeEmis.reduce((s: number, e: any) => s + Number(e.amount), 0);
+  const rangePaid = rangeEmis.filter((e: any) => e.status === 'paid')
+                             .reduce((s: number, e: any) => s + Number(e.amount), 0);
+  const collectionPct = rangeDue > 0 ? ((rangePaid / rangeDue) * 100).toFixed(1) : '0.0';
 
   // ---------- Chart data ----------
-  const callsPerWeek      = buildCallsPerWeek(calls ?? [], now);
-  const collectionByMonth = buildCollectionByMonth(emi ?? [], now);
+  const callsPerWeek      = buildCallsPerWeek(calls ?? [], range.from, range.to);
+  const collectionByMonth = buildCollectionByMonth(emi ?? [], range.from, range.to);
   const reminderPie       = buildReminderPie(reminders ?? []);
   const studentFunnel     = buildStudentFunnel(students ?? [], now);
 
   return (
     <div className="px-7 py-7 max-w-[1400px]">
-      <div className="mb-6">
-        <h1 className="text-[24px] font-semibold tracking-tight">Reports</h1>
-        <p className="text-[13.5px] text-ink-500 mt-1">Coverage, conversion, and collection at a glance.</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[24px] font-semibold tracking-tight">Reports</h1>
+          <p className="text-[13.5px] text-ink-500 mt-1">Coverage, conversion, and collection at a glance.</p>
+        </div>
+        <ReportsDateFilter
+          currentPreset={range.preset}
+          currentFrom={range.from0}
+          currentTo={range.to0}
+          label={range.label}
+        />
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-6">
         <KpiCard
-          label="Calls per student / month"
+          label="Calls per student"
           value={callsPerStudent}
-          sub={`${callsLast30.length} calls · ${studentCount} students (last 30 d)`}
+          sub={`${callsInRange.length} calls · ${studentCount} students · ${range.label}`}
           tone={Number(callsPerStudent) >= 4 ? 'good' : 'warn'}
           icon="Phone"
         />
         <KpiCard
           label="Reminder delivery rate"
           value={`${deliveryPct}%`}
-          sub={`${reminderDelivered}/${reminderTotal} (last 30 d)`}
+          sub={`${reminderDelivered}/${reminderTotal} · ${range.label}`}
           tone={Number(deliveryPct) >= 95 ? 'good' : 'warn'}
           icon="Send"
         />
         <KpiCard
           label="Collection vs due"
           value={`${collectionPct}%`}
-          sub={`₹${Math.round(mtdPaid).toLocaleString('en-IN')} of ₹${Math.round(mtdDue).toLocaleString('en-IN')} MTD`}
+          sub={`₹${Math.round(rangePaid).toLocaleString('en-IN')} of ₹${Math.round(rangeDue).toLocaleString('en-IN')} · ${range.label}`}
           tone={Number(collectionPct) >= 80 ? 'good' : 'warn'}
           icon="IndianRupee"
         />
@@ -277,15 +287,15 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <ChartCard title="Calls logged per week" subtitle="last 12 weeks">
+        <ChartCard title="Calls logged per week" subtitle={range.label}>
           <CallsPerWeekChart data={callsPerWeek} />
         </ChartCard>
 
-        <ChartCard title="Monthly collection" subtitle="last 6 months · ₹ due vs paid">
+        <ChartCard title="Monthly collection" subtitle={`${range.label} · ₹ due vs paid`}>
           <CollectionRateChart data={collectionByMonth} />
         </ChartCard>
 
-        <ChartCard title="Reminder status breakdown" subtitle="last 30 days">
+        <ChartCard title="Reminder status breakdown" subtitle={range.label}>
           <ReminderDeliveryChart data={reminderPie} />
         </ChartCard>
 
@@ -301,22 +311,66 @@ export default async function ReportsPage() {
 // Aggregation helpers
 // ============================================================================
 
-function lastNWeeks(n: number, anchor: Date): Date[] {
-  const out: Date[] = [];
-  const monday = new Date(anchor);
+// ---------- Date-range resolution (drives the time-based metrics) ----------
+
+type ResolvedRange = { from: Date; to: Date; preset: string; from0?: string; to0?: string; label: string };
+
+// YYYY-MM-DD from local components (emi.due_date is a DATE column, so we compare
+// by calendar day and avoid a UTC toISOString() shift moving the boundary).
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Turn the URL params (?preset= or ?from=&to=) into a concrete window. A custom
+// from/to wins; otherwise a preset; default is the last 30 days. The returned
+// preset/from0/to0 feed the filter UI so it highlights the active choice.
+function resolveRange(sp: { preset?: string; from?: string; to?: string }, now: Date): ResolvedRange {
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+  const endOfDay   = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  const fmt = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  if (sp.from && sp.to) {
+    const from = startOfDay(new Date(sp.from + 'T00:00:00'));
+    const to   = endOfDay(new Date(sp.to + 'T00:00:00'));
+    return { from, to, preset: 'custom', from0: sp.from, to0: sp.to, label: `${fmt(from)} – ${fmt(to)}` };
+  }
+
+  const preset = sp.preset ?? '30d';
+  const to = endOfDay(now);
+  switch (preset) {
+    case '7d':
+      return { from: startOfDay(new Date(now.getTime() - 6 * 86400000)), to, preset, label: 'Last 7 days' };
+    case '90d':
+      return { from: startOfDay(new Date(now.getTime() - 89 * 86400000)), to, preset, label: 'Last 90 days' };
+    case 'mtd':
+      return { from: new Date(now.getFullYear(), now.getMonth(), 1), to, preset, label: 'This month' };
+    case 'last-month': {
+      const from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lmTo = endOfDay(new Date(now.getFullYear(), now.getMonth(), 0)); // last day of previous month
+      return { from, to: lmTo, preset, label: 'Last month' };
+    }
+    case 'ytd':
+      return { from: new Date(now.getFullYear(), 0, 1), to, preset, label: 'This year' };
+    case '30d':
+    default:
+      return { from: startOfDay(new Date(now.getTime() - 29 * 86400000)), to, preset: '30d', label: 'Last 30 days' };
+  }
+}
+
+function buildCallsPerWeek(callsRaw: any[], from: Date, to: Date): CallsPerWeekPoint[] {
+  // Weekly buckets (Mondays) spanning the selected range. Guard caps the bar
+  // count so a long range (e.g. YTD) stays readable.
+  const weeks: Date[] = [];
+  const monday = new Date(from);
   const day = (monday.getDay() + 6) % 7;
   monday.setDate(monday.getDate() - day);
   monday.setHours(0, 0, 0, 0);
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(monday);
-    d.setDate(d.getDate() - i * 7);
-    out.push(d);
+  let guard = 0;
+  while (monday <= to && guard < 60) {
+    weeks.push(new Date(monday));
+    monday.setDate(monday.getDate() + 7);
+    guard++;
   }
-  return out;
-}
-
-function buildCallsPerWeek(callsRaw: any[], now: Date): CallsPerWeekPoint[] {
-  const weeks = lastNWeeks(12, now);
   return weeks.map((wk) => {
     const next = new Date(wk);
     next.setDate(next.getDate() + 7);
@@ -333,10 +387,16 @@ function buildCallsPerWeek(callsRaw: any[], now: Date): CallsPerWeekPoint[] {
   });
 }
 
-function buildCollectionByMonth(emiRaw: any[], now: Date): CollectionRatePoint[] {
+function buildCollectionByMonth(emiRaw: any[], from: Date, to: Date): CollectionRatePoint[] {
+  // Month buckets spanning the selected range (capped for very long ranges).
   const months: Date[] = [];
-  for (let i = 5; i >= 0; i--) {
-    months.push(new Date(now.getFullYear(), now.getMonth() - i, 1));
+  let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+  const lastMonth = new Date(to.getFullYear(), to.getMonth(), 1);
+  let guard = 0;
+  while (cursor <= lastMonth && guard < 36) {
+    months.push(new Date(cursor));
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    guard++;
   }
   return months.map((m) => {
     const next = new Date(m.getFullYear(), m.getMonth() + 1, 1);
