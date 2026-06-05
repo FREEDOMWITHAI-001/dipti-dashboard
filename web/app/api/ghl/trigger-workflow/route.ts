@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
+import { getMyPermissions } from '@/lib/check-permission';
 import { dispatchReminder } from '@/lib/events';
 import { normalizePhone } from '@/lib/utils';
 
@@ -16,6 +17,8 @@ export async function POST(req: Request) {
   const sb = supabaseServer();
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return new NextResponse('unauthenticated', { status: 401 });
+  const { has } = await getMyPermissions();
+  if (!has('send-reminders')) return new NextResponse('forbidden — Send Reminders permission required', { status: 403 });
 
   const body = (await req.json()) as {
     studentId: string;

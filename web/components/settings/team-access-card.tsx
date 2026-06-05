@@ -360,6 +360,9 @@ const ALL_PERMISSIONS = [
   { key: 'calls',      label: 'Call Queue' },
   { key: 'comments',   label: 'Comments' },
   { key: 'reports',    label: 'Reports' },
+  // Feature permissions (actions, not nav pages)
+  { key: 'ai',             label: 'AI Tools (Briefing, Progress summary, Chat extract)' },
+  { key: 'send-reminders', label: 'Send Reminders / Messages' },
 ];
 
 function InlinePermissionsModal({

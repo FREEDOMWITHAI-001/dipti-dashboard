@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getMyPermissions } from '@/lib/check-permission';
 import { generateBriefing } from '@/lib/ai/briefing';
 
 // POST /api/briefing/generate
@@ -11,8 +12,9 @@ export const maxDuration = 30;
 
 export async function POST(req: Request) {
   const sb = supabaseServer();
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) return new NextResponse('unauthenticated', { status: 401 });
+  const { isSignedIn, has } = await getMyPermissions();
+  if (!isSignedIn) return new NextResponse('unauthenticated', { status: 401 });
+  if (!has('ai')) return new NextResponse('forbidden — AI Tools permission required', { status: 403 });
 
   const { studentId } = (await req.json()) as { studentId: string };
   if (!studentId) return new NextResponse('studentId required', { status: 400 });

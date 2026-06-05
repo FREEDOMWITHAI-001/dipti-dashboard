@@ -9,6 +9,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 const VALID_PERMS = new Set([
   'students', 'emi', 'progress', 'follow-ups',
   'reminders', 'calls', 'comments', 'reports',
+  'ai', 'send-reminders',
 ]);
 
 export const runtime = 'nodejs';

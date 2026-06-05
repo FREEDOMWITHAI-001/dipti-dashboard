@@ -3,7 +3,10 @@ import { supabaseServer } from '@/lib/supabase/server';
 
 export type Permission =
   | 'students' | 'emi' | 'progress' | 'follow-ups'
-  | 'reminders' | 'calls' | 'comments' | 'reports';
+  | 'reminders' | 'calls' | 'comments' | 'reports'
+  // Feature permissions (not nav pages): the AI tools (briefing, progress
+  // summary, chat-screenshot extract) and the send-message/reminder action.
+  | 'ai' | 'send-reminders';
 
 /**
  * Gets the current user's permissions + admin status.
