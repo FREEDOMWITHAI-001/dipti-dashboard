@@ -19,7 +19,19 @@
       "Bash(npm run *)",
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('next', p.dependencies.next\\); console.log\\('react', p.dependencies.react\\); console.log\\('react-dom', p.dependencies['react-dom']\\);\")",
       "Bash(npm ls *)",
-      "Bash(node scripts/diag-students.cjs)"
+      "Bash(node scripts/diag-students.cjs)",
+      "Bash(grep -nE 'return \\\\\\(|className=\"px-|max-w-\\\\[|KpiCard|grid grid-cols' 'app/\\(app\\)/__TRACKED_VAR__/page.tsx')",
+      "Bash(grep -cE KpiCard 'app/\\(app\\)/__TRACKED_VAR__/page.tsx')",
+      "Bash(grep -oE 'max-w-\\\\[[0-9]+px\\\\]' 'app/\\(app\\)/__TRACKED_VAR__/page.tsx')",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(grep -nE 'for \\\\\\(|await admin|\\\\.maybeSingle\\\\\\(\\\\\\)|\\\\.insert\\\\\\(|\\\\.update\\\\\\(|\\\\.upsert\\\\\\(|\\\\.select\\\\\\(' app/api/students/__TRACKED_VAR__/route.ts)",
+      "Bash(ls vercel.json)",
+      "Bash(grep -rniE \"maxDuration|export const runtime|export const maxDuration\" app/api/ghl/ next.config.* vercel.json)",
+      "PowerShell(Get-NetTCPConnection *)",
+      "PowerShell(Stop-Process *)",
+      "Bash(git rev-list *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git *)"
     ]
   }
 }

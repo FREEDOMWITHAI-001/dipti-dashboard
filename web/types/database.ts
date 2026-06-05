@@ -73,6 +73,7 @@ export type Database = {
           installment_no: number;
           installments_total: number;
           amount: number;
+          original_amount: number | null;
           due_date: string;
           reminder_date: string;
           status: 'upcoming' | 'due_soon' | 'overdue' | 'paid' | 'cancelled';

@@ -8,20 +8,52 @@ import { Button } from '@/components/ui/button';
 import { fmtINR } from '@/lib/utils';
 
 // Collect a payment toward the outstanding balance with an EDITABLE amount.
-// There is no fixed EMI plan in the payment-history model — paid amounts are
-// recorded as installments and the outstanding is (total fee − paid). This
-// modal adds one more payment:
-//   • "Record received"  → inserts a paid emi_schedule row (offline payment)
-//   • "Payment link"     → inserts an upcoming row + generates a Cashfree link;
-//                          the link is shown here to copy/send, and the webhook
-//                          marks it paid when the student pays.
-// The amount defaults to the balance NOT already covered by unpaid installments
-// so it never double-schedules money that's already on the plan.
+// Two modes:
+//   • "Record received" → money already in hand. We ALLOCATE it across the
+//       existing unpaid installments, oldest due first: each fully-covered
+//       installment is marked paid; the one the money runs out on is SPLIT
+//       (paid portion + a new upcoming row for the leftover); anything beyond
+//       the last unpaid installment is recorded as a standalone "extra" paid
+//       row. Already-paid installments are never touched.
+//   • "Payment link" → a FUTURE payment, so it does NOT touch existing EMIs.
+//       It inserts one new upcoming row + a Cashfree link; the link is shown
+//       here to copy/send and the webhook (or Sync) marks it paid on payment.
 
 const MODES = ['UPI', 'Bank Transfer', 'NEFT', 'Cash', 'Card', 'Cheque', 'Wallet', 'Other'];
 
+type UnpaidEmi = {
+  id: string;
+  amount: number;
+  due_date: string;
+  installment_no: number;
+  installments_total: number;
+  label: string;
+};
+
+// Pure allocation planner — used for BOTH the live preview and the actual write
+// so what the coach sees is exactly what happens. Walks the unpaid installments
+// (already sorted oldest-due-first) and spends `amount` across them.
+function planAllocation(amount: number, unpaid: UnpaidEmi[]) {
+  let remaining = Math.max(0, Math.round(amount));
+  const fullyPaid: UnpaidEmi[] = [];
+  let split: { emi: UnpaidEmi; paid: number; leftover: number } | null = null;
+  for (const emi of unpaid) {
+    if (remaining <= 0) break;
+    const amt = Number(emi.amount);
+    if (remaining >= amt) {
+      fullyPaid.push(emi);
+      remaining -= amt;
+    } else {
+      split = { emi, paid: remaining, leftover: amt - remaining };
+      remaining = 0;
+    }
+  }
+  // Whatever is left over fell past every unpaid installment → genuine surplus.
+  return { fullyPaid, split, surplus: remaining };
+}
+
 export function CollectPaymentModal({
-  open, onClose, onSaved, studentId, outstanding, defaultAmount, nextInstallmentNo,
+  open, onClose, onSaved, studentId, outstanding, defaultAmount, nextInstallmentNo, unpaidEmis,
 }: {
   open: boolean;
   onClose: () => void;
@@ -30,13 +62,18 @@ export function CollectPaymentModal({
   outstanding: number;
   defaultAmount: number;
   nextInstallmentNo: number;
+  unpaidEmis: UnpaidEmi[];
 }) {
   const sb = supabaseBrowser();
   const { toast } = useToast();
   const today = new Date().toISOString().slice(0, 10);
 
   const [method, setMethod] = useState<'received' | 'link'>('link');
-  const [amount, setAmount] = useState<number>(Math.max(0, Math.round(defaultAmount)));
+  // Default to the next unpaid installment's amount (the typical single
+  // collection); fall back to the not-yet-scheduled balance when nothing is due.
+  const [amount, setAmount] = useState<number>(
+    Math.max(0, Math.round(unpaidEmis[0]?.amount ?? defaultAmount)),
+  );
   const [paidDate, setPaidDate] = useState(today);
   const [mode, setMode] = useState('NEFT');
   const [dueDate, setDueDate] = useState(today);
@@ -66,30 +103,94 @@ export function CollectPaymentModal({
     if (!(amount > 0)) { toast('Enter an amount greater than 0.', 'error'); return; }
     setBusy(true);
 
-    const base: any = {
+    // ── Record received: allocate the money across existing unpaid EMIs ──
+    if (method === 'received') {
+      const { fullyPaid, split, surplus } = planAllocation(amount, unpaidEmis);
+      const paidPatch: any = { status: 'paid', paid_date: paidDate, payment_mode: mode };
+      if (reference.trim()) paidPatch.payment_link = reference.trim();
+
+      try {
+        // Mark every fully-covered installment paid in one write.
+        if (fullyPaid.length) {
+          const { error } = await sb
+            .from('emi_schedule')
+            .update(paidPatch)
+            .in('id', fullyPaid.map((e) => e.id));
+          if (error) throw error;
+        }
+
+        // The installment the money ran out on: existing row keeps the PAID
+        // portion, a new upcoming row carries the still-owed leftover.
+        if (split) {
+          const { error: e1 } = await sb
+            .from('emi_schedule')
+            .update({ ...paidPatch, amount: split.paid })
+            .eq('id', split.emi.id);
+          if (e1) throw e1;
+          const { error: e2 } = await sb.from('emi_schedule').insert({
+            student_id: studentId,
+            installment_no: split.emi.installment_no,
+            installments_total: split.emi.installments_total,
+            amount: split.leftover,
+            status: 'upcoming',
+            due_date: split.emi.due_date,
+            reminder_date: reminderFor(split.emi.due_date),
+          });
+          if (e2) throw e2;
+        }
+
+        // Money beyond every unpaid installment → a standalone extra paid row.
+        if (surplus > 0) {
+          const { error } = await sb.from('emi_schedule').insert({
+            student_id: studentId,
+            installment_no: nextInstallmentNo,
+            installments_total: nextInstallmentNo,
+            amount: surplus,
+            status: 'paid',
+            due_date: paidDate,
+            reminder_date: paidDate,
+            paid_date: paidDate,
+            payment_mode: mode,
+            ...(reference.trim() ? { payment_link: reference.trim() } : {}),
+          });
+          if (error) throw error;
+        }
+
+        setBusy(false);
+        const n = fullyPaid.length + (split ? 1 : 0);
+        toast(
+          `${fmtINR(amount)} recorded via ${mode}` +
+            (n ? ` — ${n} installment${n === 1 ? '' : 's'} updated` : '') +
+            (surplus > 0 ? ` · ${fmtINR(surplus)} extra` : '') + '.',
+          'success',
+        );
+        onSaved();
+        onClose();
+      } catch (e: any) {
+        // A write failed partway — surface it and refresh so the coach sees the
+        // real persisted state rather than a stale view.
+        setBusy(false);
+        toast(e.message ?? 'Failed to record payment', 'error');
+        onSaved();
+      }
+      return;
+    }
+
+    // ── Payment link: a future payment → one new upcoming installment + link ──
+    const row: any = {
       student_id: studentId,
       installment_no: nextInstallmentNo,
       installments_total: nextInstallmentNo,
       amount,
+      status: 'upcoming',
+      due_date: dueDate,
+      reminder_date: reminderFor(dueDate),
     };
-
-    const row =
-      method === 'received'
-        ? { ...base, status: 'paid', due_date: paidDate, reminder_date: paidDate, paid_date: paidDate, payment_mode: mode, ...(reference.trim() ? { payment_link: reference.trim() } : {}) }
-        : { ...base, status: 'upcoming', due_date: dueDate, reminder_date: reminderFor(dueDate) };
 
     const { data: created, error } = await sb.from('emi_schedule').insert(row).select('id').single();
     if (error) {
       setBusy(false);
       toast(error.message, 'error');
-      return;
-    }
-
-    if (method === 'received') {
-      setBusy(false);
-      toast(`Payment of ${fmtINR(amount)} recorded via ${mode}.`, 'success');
-      onSaved();
-      onClose();
       return;
     }
 
@@ -210,6 +311,35 @@ export function CollectPaymentModal({
                   <Field label="Reference / note (optional)">
                     <input type="text" value={reference} onChange={(e) => setReference(e.target.value)} placeholder="e.g. UPI txn ID, cheque no." className={fieldCls} />
                   </Field>
+
+                  {/* Live preview of how this amount lands on the EMI schedule. */}
+                  {amount > 0 && (() => {
+                    const { fullyPaid, split, surplus } = planAllocation(amount, unpaidEmis);
+                    if (!fullyPaid.length && !split && surplus === 0) return null;
+                    return (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2.5 text-[12px] space-y-1">
+                        <div className="font-medium text-emerald-800">This payment will:</div>
+                        {fullyPaid.map((e) => (
+                          <div key={e.id} className="flex items-center justify-between text-emerald-700">
+                            <span>✓ Mark EMI {e.label} paid</span>
+                            <span className="font-medium">{fmtINR(e.amount)}</span>
+                          </div>
+                        ))}
+                        {split && (
+                          <div className="flex items-center justify-between text-emerald-700">
+                            <span>◐ Part-pay EMI {split.emi.label} · {fmtINR(split.leftover)} still due</span>
+                            <span className="font-medium">{fmtINR(split.paid)}</span>
+                          </div>
+                        )}
+                        {surplus > 0 && (
+                          <div className="flex items-center justify-between text-amber-700">
+                            <span>+ Extra (fee fully cleared)</span>
+                            <span className="font-medium">{fmtINR(surplus)}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               ) : (
                 <Field label="Due date">

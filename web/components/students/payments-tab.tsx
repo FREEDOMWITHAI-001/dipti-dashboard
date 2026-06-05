@@ -13,6 +13,7 @@ import { MarkPaidModal } from './mark-paid-modal';
 import { EditPaymentModal } from './edit-payment-modal';
 import { ChangePaymentLinkModal } from './change-payment-link-modal';
 import { CollectPaymentModal } from './collect-payment-modal';
+import { EditEmiLinkModal } from './edit-emi-link-modal';
 import { PaymentHistorySection } from './payment-history-section';
 import type { Database } from '@/types/database';
 
@@ -35,7 +36,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
   const [editEmi, setEditEmi] = useState<Emi | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   const [collectOpen, setCollectOpen] = useState(false);
-  const [busyCashfree, setBusyCashfree] = useState<string | null>(null);
+  const [linkEmi, setLinkEmi] = useState<Emi | null>(null);
   const [busySync, setBusySync] = useState<string | null>(null);
   const [paymentIdsByEmi, setPaymentIdsByEmi] = useState<Record<string, string>>({});
   const [loaded, setLoaded] = useState(false);
@@ -51,25 +52,6 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
     }).catch(() => {
       toast('Failed to copy', 'error');
     });
-  }
-
-  async function generateCashfreeLink(emiId: string) {
-    setBusyCashfree(emiId);
-    try {
-      const res = await fetch('/api/cashfree/generate-link', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emiId }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error ?? 'Failed');
-      toast('Cashfree link generated', 'success');
-      await load();
-    } catch (e: any) {
-      toast(e.message ?? 'Failed to generate Cashfree link', 'error');
-    } finally {
-      setBusyCashfree(null);
-    }
   }
 
   async function load(): Promise<Emi[]> {
@@ -199,6 +181,22 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
   })();
 
   const labelByEmiId = new Map(labeledRows.map((l) => [l.row.id, l.label] as const));
+  // Unpaid installments, OLDEST DUE FIRST — the order "Collect payment" applies
+  // a received lump sum in (mark each fully-covered one paid, split the one the
+  // money runs out on).
+  const unpaidEmisForCollect = labeledRows
+    .filter((l) => l.row.status !== 'paid')
+    .map((l) => ({
+      id: l.row.id,
+      amount: Number(l.row.amount),
+      due_date: l.row.due_date,
+      installment_no: Number(l.row.installment_no),
+      installments_total: Number(l.row.installments_total),
+      label: l.label,
+    }))
+    .sort((a, b) =>
+      a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : a.installment_no - b.installment_no,
+    );
   // Plan-only EMI counts (exclude extra top-ups) for the KPI subtitles.
   const planPaidCount = labeledRows.filter((l) => !l.isExtra && l.row.status === 'paid').length;
   const planUnpaidCount = labeledRows.filter((l) => !l.isExtra && l.row.status !== 'paid').length;
@@ -396,7 +394,17 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
               ) : (
                 <div className="font-mono text-[12px] text-ink-700">{label}</div>
               )}
-              <div className="font-semibold">{fmtINR(Number(r.amount))}</div>
+              <div className="font-semibold flex items-center gap-1.5">
+                {fmtINR(Number(r.amount))}
+                {(r as any).original_amount != null && Number((r as any).original_amount) !== Number(r.amount) && (
+                  <span
+                    className="inline-flex items-center px-1.5 h-5 rounded bg-amber-100 text-amber-700 text-[10px] font-semibold tracking-wide"
+                    title={`Edited from ${fmtINR(Number((r as any).original_amount))} (plan amount). The remaining EMIs rebalance once this is paid.`}
+                  >
+                    edited
+                  </span>
+                )}
+              </div>
               <div className="text-ink-600">{fmtDate(r.due_date)}</div>
               <div><StatusPill status={r.status} /></div>
               <div className="text-right">
@@ -442,13 +450,12 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                       </>
                     ) : (
                       <button
-                        onClick={() => generateCashfreeLink(r.id)}
-                        disabled={busyCashfree === r.id}
-                        className="text-[11.5px] font-medium text-blue-700 hover:underline inline-flex items-center gap-1 disabled:opacity-50"
-                        title="Generate Cashfree payment link for this EMI"
+                        onClick={() => setLinkEmi(r)}
+                        className="text-[11.5px] font-medium text-blue-700 hover:underline inline-flex items-center gap-1"
+                        title="Edit this installment's amount, then generate its Cashfree payment link"
                       >
                         <LinkIcon className="w-3 h-3" />
-                        {busyCashfree === r.id ? 'Generating…' : 'Get link'}
+                        Get link
                       </button>
                     )}
                     {(r as any).cashfree_link_id && (
@@ -533,6 +540,20 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
         />
       )}
       {setupOpen && <EmiSetupModal studentId={studentId} onClose={() => setSetupOpen(false)} onSaved={load} />}
+      {linkEmi && (
+        <EditEmiLinkModal
+          open={!!linkEmi}
+          onClose={() => setLinkEmi(null)}
+          onSaved={load}
+          emiId={linkEmi.id}
+          installmentLabel={labelByEmiId.get(linkEmi.id) ?? `${linkEmi.installment_no}/${linkEmi.installments_total}`}
+          currentAmount={Number(linkEmi.amount)}
+          existingOriginal={(linkEmi as any).original_amount ?? null}
+          remainingEmis={unpaidEmisForCollect
+            .filter((e) => e.id !== linkEmi.id)
+            .map((e) => ({ id: e.id, label: e.label, amount: e.amount }))}
+        />
+      )}
       {collectOpen && (
         <CollectPaymentModal
           open={collectOpen}
@@ -542,6 +563,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           outstanding={outstanding}
           defaultAmount={collectable}
           nextInstallmentNo={nextInstallmentNo}
+          unpaidEmis={unpaidEmisForCollect}
         />
       )}
 
