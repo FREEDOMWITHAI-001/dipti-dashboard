@@ -96,7 +96,7 @@ export async function fireReminder(_event: string, _row: any) {
 }
 
 export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | null): Promise<number> {
-  // Mark EMIs that are due today as 'due_soon' if still 'upcoming'
+  // Keep marking EMIs due TODAY as 'due_soon' for the UI badge/filter — unchanged.
   const today = istDateString();
   await sb
     .from('emi_schedule')
@@ -104,33 +104,42 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
     .eq('due_date', today)
     .eq('status', 'upcoming');
 
-  // Paginate so a backlog of >1000 due rows doesn't silently skip the tail.
-  const rows = await selectAllRows((f, t) => sb.from('v_emi_due_today').select('*').order('id').range(f, t));
+  // Reminders fire 2 DAYS BEFORE the due date (this event is "EMI reminder
+  // (2 days before due)"). Pull the installments whose due date is exactly two
+  // days out, joining the student for the contact fields the workflow needs.
+  // Paginated so a backlog of >1000 rows doesn't silently skip the tail.
+  const remindOn = istDateString(new Date(Date.now() + 2 * 86400000));
+  const rows = await selectAllRows((f, t) =>
+    sb.from('emi_schedule')
+      .select('id, student_id, amount, due_date, installment_no, installments_total, cashfree_link_url, payment_link, students!inner(ghl_contact_id, email, first_name, last_name, mobile, payment_link)')
+      .eq('due_date', remindOn)
+      .neq('status', 'paid')
+      .neq('status', 'cancelled')
+      .order('id')
+      .range(f, t),
+  );
   let fired = 0;
   for (const r of (rows ?? []) as any[]) {
+    const stu = r.students ?? {};
+    // Idempotent: skip if a reminder for this EMI is already queued/sent.
     const dup = await sb.from('reminders').select('id')
       .eq('emi_id', r.id).in('status', ['queued', 'sent', 'delivered']).maybeSingle();
     if (dup.data) continue;
-    // Fetch payment link with priority: Cashfree link for THIS EMI > EMI generic link > student default
-    const { data: emiRow } = await sb.from('emi_schedule').select('cashfree_link_url, payment_link').eq('id', r.id).maybeSingle();
-    const { data: stuRow } = await sb.from('students').select('payment_link').eq('id', r.student_id).maybeSingle();
-    const paymentLink =
-      (emiRow as any)?.cashfree_link_url
-      || (emiRow as any)?.payment_link
-      || (stuRow as any)?.payment_link
-      || null;
+
+    // Payment link priority: Cashfree link for THIS EMI > EMI generic link > student default.
+    const paymentLink = r.cashfree_link_url || r.payment_link || stu.payment_link || null;
 
     const out = await dispatchReminder(sb, {
       event: 'emi.reminder_due',
       studentId: r.student_id,
       emiId: r.id,
-      ghlContactId: r.ghl_contact_id ?? null,
+      ghlContactId: stu.ghl_contact_id ?? null,
       workflowId,
       payload: {
-        email: r.email,
-        first_name: r.first_name,
-        last_name: r.last_name,
-        phone: normalizePhone(r.mobile),
+        email: stu.email,
+        first_name: stu.first_name,
+        last_name: stu.last_name,
+        phone: normalizePhone(stu.mobile),
         amount: r.amount,
         due_date: r.due_date,
         installment: `${r.installment_no}/${r.installments_total}`,
