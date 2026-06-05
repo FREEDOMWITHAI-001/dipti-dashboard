@@ -26,6 +26,17 @@ type StudentSlim = {
   payment_link: string | null;
 };
 
+// Show the live status from the due date so a past-due unpaid installment reads
+// "Overdue" immediately, even when the stored status hasn't been flipped yet by
+// the nightly cron (or was just changed via the due-date edit). Display-only —
+// the stored status/amounts are untouched; the cron still reconciles the DB value.
+function emiDisplayStatus(status: Emi['status'], dueDate: string | null, istToday: string): Emi['status'] {
+  if (status === 'paid' || status === 'cancelled') return status;
+  if (dueDate && String(dueDate).slice(0, 10) < istToday) return 'overdue';
+  if (status === 'overdue') return 'upcoming'; // stale overdue but due date is now today/future
+  return status;
+}
+
 export function PaymentsTab({ studentId }: { studentId: string }) {
   const sb = useMemo(() => supabaseBrowser(), []);
   const { toast } = useToast();
@@ -131,6 +142,9 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
     return () => { cancelled = true; };
     /* eslint-disable-next-line */
   }, [studentId, sb]);
+
+  // IST calendar date "today" for the live overdue check below.
+  const istToday = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
 
   const totalEmi    = rows.reduce((s, r) => s + Number(r.amount), 0);
   const paidEmi     = rows.filter(r => r.status === 'paid').reduce((s, r) => s + Number(r.amount), 0);
@@ -419,7 +433,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                   </button>
                 )}
               </div>
-              <div><StatusPill status={r.status} /></div>
+              <div><StatusPill status={emiDisplayStatus(r.status, r.due_date, istToday)} /></div>
               <div className="text-right">
                 {r.status === 'paid' ? (
                   <div className="flex items-center justify-end gap-2">

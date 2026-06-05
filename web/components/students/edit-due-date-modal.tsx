@@ -36,9 +36,14 @@ export function EditDueDateModal({
   async function save() {
     if (!dueDate) { toast('Pick a due date.', 'error'); return; }
     setBusy(true);
+    // Keep the stored status consistent with the new date (this modal only opens
+    // for UNPAID installments, so paid rows are never touched here): a past date
+    // is overdue, today/future is upcoming. The nightly cron reconciles anyway.
+    const istToday = new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10);
+    const status = dueDate < istToday ? 'overdue' : 'upcoming';
     const { error } = await sb
       .from('emi_schedule')
-      .update({ due_date: dueDate, reminder_date: reminderFor(dueDate) } as any)
+      .update({ due_date: dueDate, reminder_date: reminderFor(dueDate), status } as any)
       .eq('id', emiId);
     setBusy(false);
     if (error) { toast(error.message, 'error'); return; }
