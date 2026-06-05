@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Users, UserPlus, ShieldCheck, Loader2, AlertTriangle,
-  Trash2, ArrowDown, ArrowUp, Check,
+  Trash2, ArrowDown, ArrowUp, Check, KeyRound,
 } from 'lucide-react';
 import { useToast } from '@/components/shell/toast-region';
 
@@ -27,6 +27,7 @@ export function TeamAccessCard({
   const [tab, setTab] = useState<'create' | 'promote'>('create');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [permsUser, setPermsUser] = useState<TeamMember | null>(null);
+  const [pwUser, setPwUser] = useState<TeamMember | null>(null);
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     message: string;
@@ -174,6 +175,7 @@ export function TeamAccessCard({
             isLastAdmin={isLastAdmin}
             onDelete={() => deleteUser(m)}
             onDemote={() => demote(m)}
+            onPassword={() => setPwUser(m)}
           />
         ))}
       </MemberSection>
@@ -185,6 +187,7 @@ export function TeamAccessCard({
             onDelete={() => deleteUser(m)}
             onPromote={() => promoteRow(m)}
             onPermissions={() => setPermsUser(m)}
+            onPassword={() => setPwUser(m)}
           />
         ))}
       </MemberSection>
@@ -257,6 +260,12 @@ export function TeamAccessCard({
           }}
         />
       )}
+      {pwUser && (
+        <SetPasswordModal
+          user={pwUser}
+          onClose={() => setPwUser(null)}
+        />
+      )}
       {confirmAction && (
         <ConfirmDialog
           title={confirmAction.title}
@@ -292,7 +301,7 @@ function MemberSection({
 }
 
 function MemberRow({
-  member, isMe, busy, isLastAdmin, onDelete, onDemote, onPromote, onPermissions,
+  member, isMe, busy, isLastAdmin, onDelete, onDemote, onPromote, onPermissions, onPassword,
 }: {
   member: TeamMember;
   isMe: boolean;
@@ -302,6 +311,7 @@ function MemberRow({
   onDemote?: () => void;
   onPromote?: () => void;
   onPermissions?: () => void;
+  onPassword?: () => void;
 }) {
   const label = member.display_name || member.email || member.id.slice(0, 6);
   const initialsTxt = (member.initials || label).slice(0, 2).toUpperCase();
@@ -335,6 +345,12 @@ function MemberRow({
             title="Manage page access for this coach"
             className="h-7 px-2 rounded-md border border-accent-200 bg-accent-50 text-accent-700 hover:bg-accent-100 text-[11px] inline-flex items-center gap-1 disabled:opacity-30"
           >Permissions</button>
+        )}
+        {onPassword && (
+          <button onClick={onPassword} disabled={busy}
+            title="Set a new password for this user"
+            className="h-7 px-2 rounded-md border border-ink-200 hover:bg-ink-100 text-[11px] inline-flex items-center gap-1 disabled:opacity-30"
+          ><KeyRound className="w-3 h-3" /> Password</button>
         )}
         <button onClick={onDelete} disabled={busy || cannotDelete}
           title={isMe ? "Can't delete yourself" : member.role === 'admin' && isLastAdmin ? "Can't delete the last admin" : 'Delete user'}
@@ -442,6 +458,69 @@ function InlinePermissionsModal({
           <button onClick={onClose} className="h-9 px-4 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50">Cancel</button>
           <button onClick={save} disabled={saving} className="h-9 px-5 rounded-lg bg-ink-900 text-white text-[13px] font-medium disabled:opacity-50 hover:bg-ink-800">
             {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Set Password — admin sets a new password for a team member
+// ============================================================================
+function SetPasswordModal({
+  user, onClose,
+}: {
+  user: TeamMember;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    if (password.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
+    if (password !== confirm) { toast('Passwords do not match', 'error'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/admin/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id, password }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast(`Password updated for ${user.display_name || user.email}`, 'success');
+      onClose();
+    } catch (e: any) {
+      toast(e.message ?? 'Failed to set password', 'error');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center px-4">
+      <div onClick={onClose} className="absolute inset-0 bg-black/40" />
+      <div className="relative bg-white rounded-2xl shadow-pop w-full max-w-[420px] p-6">
+        <div className="flex items-start justify-between mb-5">
+          <div>
+            <div className="text-[16px] font-semibold flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-accent-600" /> Set password
+            </div>
+            <div className="text-[12px] text-ink-500 mt-0.5">{user.display_name || user.email}</div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-md hover:bg-ink-100 grid place-items-center text-ink-500">x</button>
+        </div>
+
+        <div className="space-y-2.5">
+          <InputField label="New password" value={password} onChange={setPassword} placeholder="min 6 characters" type="password" />
+          <InputField label="Confirm password" value={confirm} onChange={setConfirm} placeholder="re-enter password" type="password" />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button onClick={onClose} className="h-9 px-4 rounded-lg border border-ink-200 text-[13px] font-medium hover:bg-ink-50">Cancel</button>
+          <button onClick={save} disabled={saving} className="h-9 px-5 rounded-lg bg-ink-900 text-white text-[13px] font-medium disabled:opacity-50 hover:bg-ink-800 inline-flex items-center gap-1.5">
+            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : 'Set password'}
           </button>
         </div>
       </div>
