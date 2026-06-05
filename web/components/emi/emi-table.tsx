@@ -24,10 +24,20 @@ type Row = {
 
 type TabKey = 'due' | 'overdue' | 'upcoming' | 'paid';
 
+// "Due this week" = flagged due_soon, OR an unpaid installment due in the next 7
+// days (status may still be 'upcoming' if the nightly cron hasn't flipped it).
+// Mirrors the card rule in app/(app)/emi/page.tsx so the list and the KPI agree.
+const isDueThisWeek = (r: Row) =>
+  r.status === 'due_soon' ||
+  (r.status !== 'paid' && r.status !== 'cancelled' && !!r.due_date &&
+    new Date(r.due_date) <= new Date(Date.now() + 7 * 86400000) &&
+    new Date(r.due_date) >= new Date());
+
 const TABS: Array<{ key: TabKey; label: string; filter: (r: Row) => boolean }> = [
-  { key: 'due',     label: 'Due this week', filter: r => r.status === 'due_soon' },
+  { key: 'due',     label: 'Due this week', filter: isDueThisWeek },
   { key: 'overdue', label: 'Overdue',       filter: r => r.status === 'overdue' },
-  { key: 'upcoming',label: 'Upcoming',      filter: r => r.status === 'upcoming' },
+  // Exclude due-this-week rows so they aren't listed under both tabs.
+  { key: 'upcoming',label: 'Upcoming',      filter: r => r.status === 'upcoming' && !isDueThisWeek(r) },
   { key: 'paid',    label: 'Paid',          filter: r => r.status === 'paid' },
 ];
 

@@ -55,9 +55,19 @@ export default async function EmiPage({ searchParams }: { searchParams: { tab?: 
       .select('*, students!inner(id, first_name, last_name, email, mobile, ghl_contact_id)')
       .order('due_date').order('id').range(from, to),
   );
-  const due      = all.filter((e) => e.status === 'due_soon' || (e.status !== 'paid' && e.due_date && new Date(e.due_date) <= new Date(Date.now() + 7 * 86400000) && new Date(e.due_date) >= new Date()));
+  // "Due this week" = flagged due_soon, OR an unpaid installment whose due date
+  // falls in the next 7 days (status may still be 'upcoming' if the nightly cron
+  // hasn't flipped it yet). Shared with the EmiTable's "Due this week" tab so the
+  // card count and the list always agree.
+  const isDueThisWeek = (e: any) =>
+    e.status === 'due_soon' ||
+    (e.status !== 'paid' && e.status !== 'cancelled' && e.due_date &&
+      new Date(e.due_date) <= new Date(Date.now() + 7 * 86400000) &&
+      new Date(e.due_date) >= new Date());
+  const due      = all.filter(isDueThisWeek);
   const overdue  = all.filter((e) => e.status === 'overdue');
-  const upcoming = all.filter((e) => e.status === 'upcoming');
+  // Exclude due-this-week rows so an item isn't counted in both cards.
+  const upcoming = all.filter((e) => e.status === 'upcoming' && !isDueThisWeek(e));
   const dueAmount     = due.reduce((s, e) => s + Number(e.amount), 0);
   const overdueAmount = overdue.reduce((s, e) => s + Number(e.amount), 0);
   // Distinct students — the cards read "N students", but these are installment
