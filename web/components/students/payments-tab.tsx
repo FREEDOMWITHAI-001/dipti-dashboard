@@ -407,7 +407,18 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                   </span>
                 )}
               </div>
-              <div className="text-ink-600">{fmtDate(r.due_date)}</div>
+              <div className="text-ink-600 flex items-center gap-1.5 group/due">
+                <span>{fmtDate(r.due_date)}</span>
+                {r.status !== 'paid' && (
+                  <button
+                    onClick={() => setDueDateEmi(r)}
+                    className="opacity-0 group-hover/due:opacity-100 focus:opacity-100 transition w-5 h-5 rounded grid place-items-center text-ink-400 hover:text-accent-600 hover:bg-ink-100"
+                    title="Change this installment's due date"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
               <div><StatusPill status={r.status} /></div>
               <div className="text-right">
                 {r.status === 'paid' ? (
@@ -474,14 +485,6 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                         </button>
                       </>
                     )}
-                    <span className="text-ink-300">·</span>
-                    <button
-                      onClick={() => setDueDateEmi(r)}
-                      className="text-[11.5px] font-medium text-ink-600 hover:text-ink-900 inline-flex items-center gap-1"
-                      title="Change this installment's due date (this EMI only)"
-                    >
-                      <Pencil className="w-3 h-3" /> Date
-                    </button>
                     <span className="text-ink-300">·</span>
                     <button
                       onClick={() => setReminderEmi(r.id)}
