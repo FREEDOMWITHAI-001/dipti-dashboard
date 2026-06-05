@@ -111,6 +111,17 @@ export async function POST(req: Request) {
       const MAX_PAGES = 500; // backstop against a non-advancing cursor
       let pageNo = 0;
 
+      // GHL's /contacts search treats `query` as a LOOSE TEXT match, so pulling
+      // "diamond" also returns contacts tagged "diamond-interested" / "diamond
+      // waitlist". Keep only contacts that actually carry the EXACT tag we asked
+      // for (case-insensitive). GHL can hand tags back as an array or a
+      // comma-separated string, so normalize both shapes.
+      const wantedTag = tag.trim().toLowerCase();
+      const hasExactTag = (raw: unknown) => {
+        const arr = Array.isArray(raw) ? raw.map((t) => String(t)) : String(raw ?? '').split(',');
+        return arr.some((t) => t.trim().toLowerCase() === wantedTag);
+      };
+
       try {
         while (true) {
           const page = await ghlSearchContactsByTag(tag, 100, startAfterId, startAfter);
@@ -118,10 +129,16 @@ export async function POST(req: Request) {
           if (!all.length) break;
 
           // Drop contacts we have already seen on an earlier (overlapping) page.
-          const contacts = all.filter((c) => c.id && !seenIds.has(c.id));
+          const fresh = all.filter((c) => c.id && !seenIds.has(c.id));
           for (const c of all) if (c.id) seenIds.add(c.id);
           // Every contact on this page was a duplicate → the cursor is looping; stop.
-          if (!contacts.length) break;
+          // (Check this on the unseen set, BEFORE the exact-tag filter, so a page
+          // full of loose-match strays doesn't falsely look like a cursor loop.)
+          if (!fresh.length) break;
+
+          // Now keep only the contacts with the exact tag — the strays GHL's
+          // loose search returned are skipped (not counted, not written).
+          const contacts = fresh.filter((c) => hasExactTag(c.tags));
           processed += contacts.length;
 
           // ── Batch the whole page instead of one DB round-trip per contact ──
