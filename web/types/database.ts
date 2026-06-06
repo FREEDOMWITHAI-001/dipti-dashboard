@@ -29,6 +29,7 @@ export type Database = {
           membership: string | null;
           tags: string[];
           student_group: string | null;
+          payment_type: string | null;
           start_date: string | null;
           end_date: string | null;
           course_start_date: string | null;
@@ -116,6 +117,7 @@ export type Database = {
           name: string;
           recipient_type: 'student' | 'coach' | 'admin';
           default_workflow_id: string | null;
+          workflow_by_payment_type: Record<string, string> | null;
           schedule: string;
           enabled: boolean;
           updated_at: string;

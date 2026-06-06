@@ -51,6 +51,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canDeleteStudents = !!sessionUser && (
     sessionUser.role === 'admin' || sessionUser.permissions.includes('delete-students')
   );
+  // Editing a student's identity, program, and EMI plan is admin-only by
+  // default; admins can grant the 'edit-students' permission to a coach.
+  const canEditStudents = !!sessionUser && (
+    sessionUser.role === 'admin' || sessionUser.permissions.includes('edit-students')
+  );
 
   return (
     <div className="h-screen flex bg-ink-50/30 overflow-hidden">
@@ -60,7 +65,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="flex-1 overflow-y-auto overflow-x-hidden">{children}</main>
       </div>
       <Suspense>
-        <StudentSlideover canDelete={canDeleteStudents} />
+        <StudentSlideover canDelete={canDeleteStudents} canEdit={canEditStudents} />
       </Suspense>
     </div>
   );

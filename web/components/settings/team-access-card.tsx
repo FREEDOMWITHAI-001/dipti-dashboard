@@ -380,6 +380,8 @@ const ALL_PERMISSIONS = [
   { key: 'ai',              label: 'AI Tools (Briefing, Progress summary, Chat extract)' },
   { key: 'send-reminders',  label: 'Send Reminders / Messages' },
   { key: 'delete-students', label: 'Delete students (single & bulk)' },
+  { key: 'edit-students',   label: 'Edit students (identity, program & EMI plan)' },
+  { key: 'view-revenue',    label: 'View revenue (Collected MTD)' },
 ];
 
 function InlinePermissionsModal({

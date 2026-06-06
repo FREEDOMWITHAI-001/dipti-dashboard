@@ -4,7 +4,12 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { istDateString } from '@/lib/utils';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// 300s (matches the GHL import-by-tag route). The client sends rows in chunks
+// and each chunk runs many sequential per-row DB calls, so a 50-row chunk can
+// take ~2 min; the old 60s cap killed it mid-chunk and Vercel returned an HTML
+// error page (the client then failed to parse it as JSON). Capacity bump only —
+// no change to what gets imported.
+export const maxDuration = 300;
 
 type ParsedRow = {
   email: string;
@@ -100,7 +105,15 @@ export async function POST(req: Request) {
   let createdEmis = 0;
   const errors: string[] = [];
 
-  for (const row of rows) {
+  // Group rows by email so any same-email rows keep their original order, while
+  // DISTINCT students run concurrently. Each student's writes are independent
+  // (its own student row, EMIs, call logs, checkpoints), so the final DB state
+  // is identical to the old strictly-sequential loop — only the wall-clock time
+  // changes (≈8× fewer serialized round-trips).
+  const groups = new Map<string, ParsedRow[]>();
+  for (const row of rows) { const g = groups.get(row.email) ?? []; g.push(row); groups.set(row.email, g); }
+  await mapWithConcurrency(Array.from(groups.values()), 8, async (groupRows) => {
+   for (const row of groupRows) {
     try {
       // Find or create student
       const { data: existing } = await admin
@@ -372,7 +385,8 @@ export async function POST(req: Request) {
     } catch (e: any) {
       errors.push(`${row.email}: ${e.message ?? 'unknown error'}`);
     }
-  }
+   }
+  });
 
   return NextResponse.json({
     ok: true,
@@ -380,6 +394,22 @@ export async function POST(req: Request) {
     emis: createdEmis,
     errors: errors.length > 0 ? errors : undefined,
   });
+}
+
+// Run an async fn over items with bounded concurrency (at most `limit` in
+// flight). Used to process distinct students in parallel instead of one strictly
+// serialized await chain — same writes, far less wall-clock time.
+async function mapWithConcurrency<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let idx = 0;
+  const n = Math.min(Math.max(1, limit), items.length || 1);
+  const workers = Array.from({ length: n }, async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= items.length) break;
+      await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
 }
 
 // Mode for the Nth payment (0-based). Precedence:

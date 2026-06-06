@@ -37,7 +37,7 @@ function emiDisplayStatus(status: Emi['status'], dueDate: string | null, istToda
   return status;
 }
 
-export function PaymentsTab({ studentId }: { studentId: string }) {
+export function PaymentsTab({ studentId, canEdit = false }: { studentId: string; canEdit?: boolean }) {
   const sb = useMemo(() => supabaseBrowser(), []);
   const { toast } = useToast();
   const [rows, setRows] = useState<Emi[]>([]);
@@ -254,11 +254,15 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           </div>
           <div className="font-semibold text-[14px]">No payment plan yet</div>
           <p className="text-[12.5px] text-ink-500 mt-1 mb-4 max-w-[320px] mx-auto">
-            Set up a course fee, down payment, and EMI schedule for this student.
+            {canEdit
+              ? 'Set up a course fee, down payment, and EMI schedule for this student.'
+              : 'No course fee, down payment, or EMI schedule has been set up for this student yet.'}
           </p>
-          <Button variant="primary" onClick={() => setSetupOpen(true)}>
-            <Plus className="w-4 h-4" /> Set up EMI plan
-          </Button>
+          {canEdit && (
+            <Button variant="primary" onClick={() => setSetupOpen(true)}>
+              <Plus className="w-4 h-4" /> Set up EMI plan
+            </Button>
+          )}
         </div>
         {setupOpen && <EmiSetupModal studentId={studentId} onClose={() => setSetupOpen(false)} onSaved={load} />}
       </>
@@ -269,8 +273,8 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
     <div className="space-y-5">
       {/* KPI strip */}
       <div className="grid grid-cols-4 gap-3">
-        <Kpi label="Total fee" value={fmtINR(totalFee)} sub={planCount ? `${planCount} installments + downpayment${extraCount > 0 ? ` · ${extraCount} extra` : ''}` : 'down payment only'} onEdit={() => setSetupOpen(true)} />
-        <Kpi label="Down payment" value={fmtINR(downPayment)} sub={student?.down_payment_date ? `paid ${fmtDate(student.down_payment_date)}` : downPayment > 0 ? 'paid' : 'not set'} tone={downPayment > 0 ? 'good' : 'neutral'} onEdit={() => setSetupOpen(true)} />
+        <Kpi label="Total fee" value={fmtINR(totalFee)} sub={planCount ? `${planCount} installments + downpayment${extraCount > 0 ? ` · ${extraCount} extra` : ''}` : 'down payment only'} onEdit={canEdit ? () => setSetupOpen(true) : undefined} />
+        <Kpi label="Down payment" value={fmtINR(downPayment)} sub={student?.down_payment_date ? `paid ${fmtDate(student.down_payment_date)}` : downPayment > 0 ? 'paid' : 'not set'} tone={downPayment > 0 ? 'good' : 'neutral'} onEdit={canEdit ? () => setSetupOpen(true) : undefined} />
         <Kpi label="Paid so far" value={fmtINR(totalPaid)} sub={`${planPaidCount} of ${planCount} EMIs paid${extraCount > 0 ? ` + ${extraCount} extra` : ''}`} tone="good" />
         <Kpi label="Outstanding" value={fmtINR(outstanding)} sub={`${planUnpaidCount} EMI${planUnpaidCount === 1 ? '' : 's'} left`} tone={outstanding > 0 ? 'warn' : 'good'} />
       </div>
@@ -295,12 +299,14 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
               <br />
               Down payment {fmtINR(downPayment)} + {rows.length} EMIs of {fmtINR(rows[0]?.amount ?? 0)} = {fmtINR(planTotal)}.
             </div>
-            <button
-              onClick={() => setSetupOpen(true)}
-              className="mt-2 h-7 px-3 rounded-md bg-amber-700 hover:bg-amber-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1"
-            >
-              Fix EMI plan
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => setSetupOpen(true)}
+                className="mt-2 h-7 px-3 rounded-md bg-amber-700 hover:bg-amber-800 text-white text-[11.5px] font-medium inline-flex items-center gap-1"
+              >
+                Fix EMI plan
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -381,13 +387,15 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           </div>
           <div className="text-[15px] font-semibold">{fmtINR(downPayment)}</div>
           <StatusPill status="paid" />
-          <button
-            onClick={() => setSetupOpen(true)}
-            className="w-7 h-7 rounded-md hover:bg-white grid place-items-center text-emerald-700 hover:text-emerald-900 transition"
-            title="Edit down payment"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setSetupOpen(true)}
+              className="w-7 h-7 rounded-md hover:bg-white grid place-items-center text-emerald-700 hover:text-emerald-900 transition"
+              title="Edit down payment"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 
@@ -411,13 +419,15 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
                   <LinkIcon className="w-3 h-3" /> Add default link
                 </button>
               )}
-              <button
-                onClick={() => setSetupOpen(true)}
-                className="text-[11.5px] font-medium text-accent-700 hover:text-accent-900 hover:underline inline-flex items-center gap-1"
-                title="Edit total fee, down payment, or EMI schedule"
-              >
-                <Pencil className="w-3 h-3" /> Edit plan
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setSetupOpen(true)}
+                  className="text-[11.5px] font-medium text-accent-700 hover:text-accent-900 hover:underline inline-flex items-center gap-1"
+                  title="Edit total fee, down payment, or EMI schedule"
+                >
+                  <Pencil className="w-3 h-3" /> Edit plan
+                </button>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-[60px_1fr_120px_140px_220px] gap-3 px-4 py-2 border-b border-ink-100 text-[10.5px] uppercase tracking-wider text-ink-500 font-semibold">
@@ -568,9 +578,11 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
             <div className="font-medium text-[13.5px]">No EMI schedule yet</div>
             <div className="text-[12px] text-ink-500">Add monthly installments for the remaining balance.</div>
           </div>
-          <Button variant="primary" onClick={() => setSetupOpen(true)}>
-            <Plus className="w-4 h-4" /> Add EMI plan
-          </Button>
+          {canEdit && (
+            <Button variant="primary" onClick={() => setSetupOpen(true)}>
+              <Plus className="w-4 h-4" /> Add EMI plan
+            </Button>
+          )}
         </div>
       )}
 
@@ -605,6 +617,7 @@ export function PaymentsTab({ studentId }: { studentId: string }) {
           onClose={() => setPayEmi(null)}
           onSaved={load}
           emiId={payEmi.id}
+          studentId={studentId}
           amount={Number(payEmi.amount)}
           installmentLabel={labelByEmiId.get(payEmi.id) ?? `${payEmi.installment_no}/${payEmi.installments_total}`}
         />

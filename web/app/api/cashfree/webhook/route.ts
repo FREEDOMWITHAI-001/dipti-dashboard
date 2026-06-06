@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { verifyWebhookSignature } from '@/lib/cashfree/client';
 import { istDateString } from '@/lib/utils';
+import { backfillPaymentType } from '@/lib/payment-types';
 
 export const runtime = 'nodejs';
 
@@ -168,6 +169,11 @@ export async function POST(req: Request) {
         cashfree_link_id: linkId,
         payload: { amount: (emi as any).amount, marked_paid: true },
       } as any);
+
+      // First payment establishes the student's preferred payment type (if
+      // unset) — use the actual method Cashfree reports (upi/card/net_banking/…).
+      const cfMethod = data?.payment?.payment_group ?? data?.payment_group ?? null;
+      await backfillPaymentType(admin, (emi as any).student_id, cfMethod);
     }
   }
 

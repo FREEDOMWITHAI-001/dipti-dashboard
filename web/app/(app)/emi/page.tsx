@@ -3,7 +3,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { FilterLink } from '@/components/ui/filter-link';
 import { EmiTable } from '@/components/emi/emi-table';
 import { EmiActions } from '@/components/emi/emi-actions';
-import { requirePermission } from '@/lib/check-permission';
+import { requirePermission, getMyPermissions } from '@/lib/check-permission';
 import { selectAllRows } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +22,13 @@ function monthStart(y: number, m: number): string {
 
 export default async function EmiPage({ searchParams }: { searchParams: { tab?: string } }) {
   
-  await requirePermission('emi');const sb = supabaseServer();
+  await requirePermission('emi');
+  const { has } = await getMyPermissions();
+  const canEditEmi = has('edit-students');
+  // The Collected MTD revenue card is admin-only by default; admins can grant
+  // the 'view-revenue' permission to a coach.
+  const canViewRevenue = has('view-revenue');
+  const sb = supabaseServer();
   const activeTab = (['due', 'overdue', 'upcoming', 'paid'].includes(searchParams?.tab ?? '')
     ? (searchParams!.tab as Tab)
     : 'due');
@@ -89,10 +95,10 @@ export default async function EmiPage({ searchParams }: { searchParams: { tab?: 
           <h1 className="text-[24px] font-semibold tracking-tight">EMI Tracker</h1>
           <p className="text-[13.5px] text-ink-500 mt-1">Auto-scheduled reminders fire daily at 09:00 IST. Manual sends override the queue.</p>
         </div>
-        <EmiActions />
+        <EmiActions canEdit={canEditEmi} />
       </div>
 
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className={`grid ${canViewRevenue ? 'grid-cols-4' : 'grid-cols-3'} gap-3 mb-6`}>
         <FilterLink param="tab" value="due" defaultValue="due" className="kpi-link">
           <KpiCard label="Due this week" value={'₹' + Math.round(dueAmount).toLocaleString('en-IN')} sub={`${dueStudents} student${dueStudents === 1 ? '' : 's'}`} tone="warn" icon="Clock" />
         </FilterLink>
@@ -102,9 +108,11 @@ export default async function EmiPage({ searchParams }: { searchParams: { tab?: 
         <FilterLink param="tab" value="upcoming" defaultValue="due" className="kpi-link">
           <KpiCard label="Upcoming" value={String(upcoming.length)} sub="future installments" icon="List" />
         </FilterLink>
-        <FilterLink param="tab" value="paid" defaultValue="due" className="kpi-link">
-          <KpiCard label="Collected MTD" value={'₹' + Math.round(collectedMtd).toLocaleString('en-IN')} sub={collectedSub} tone={collectedTone} icon="TrendingUp" />
-        </FilterLink>
+        {canViewRevenue && (
+          <FilterLink param="tab" value="paid" defaultValue="due" className="kpi-link">
+            <KpiCard label="Collected MTD" value={'₹' + Math.round(collectedMtd).toLocaleString('en-IN')} sub={collectedSub} tone={collectedTone} icon="TrendingUp" />
+          </FilterLink>
+        )}
       </div>
 
       <EmiTable rows={all as any} initialTab={activeTab} />

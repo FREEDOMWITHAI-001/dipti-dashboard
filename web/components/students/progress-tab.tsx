@@ -73,6 +73,15 @@ export function ProgressTab({
     const monthNowDone = [start, start + 1, start + 2, start + 3].every((w) => optimistic.has(w));
     const monthKey = `month_${monthIdx + 1}` as MonthKey;
     if (!!student[monthKey] !== monthNowDone) {
+      // Persist the derived month flag. Without this DB write the month state
+      // lived only in memory (via onChange) and reverted to the imported value
+      // on the next refetch — desyncing the roster filter, Achievements, and
+      // the certificate lock, which all read students.month_N.
+      const { error: monthErr } = await sb
+        .from('students')
+        .update({ [monthKey]: monthNowDone } as any)
+        .eq('id', student.id);
+      if (monthErr) { toast(monthErr.message, 'error'); return; }
       onChange?.({ [monthKey]: monthNowDone } as Partial<Student>);
     }
 

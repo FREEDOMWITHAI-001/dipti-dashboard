@@ -33,11 +33,12 @@ export default async function SettingsPage() {
   return (
     <div className="px-7 py-7 max-w-[900px]">
       <h1 className="text-[24px] font-semibold tracking-tight mb-1">Settings</h1>
-      <p className="text-[13.5px] text-ink-500 mb-6">Workspace-level configuration.</p>
+      <p className="text-[13.5px] text-ink-500 mb-6">AI assistant and Cashfree payments. GoHighLevel lives under GHL Integration.</p>
       <SettingsForm
         status={safeStatus}
         isAdmin={isAdmin}
         currentUserId={user?.id ?? null}
+        variant="core"
       />
     </div>
   );

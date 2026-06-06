@@ -8,7 +8,7 @@ import { useToast } from '@/components/shell/toast-region';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { EmiSetupModal } from '@/components/students/emi-setup-modal';
  
-export function EmiActions() {
+export function EmiActions({ canEdit = false }: { canEdit?: boolean }) {
   const { toast } = useToast();
   const sb = useMemo(() => supabaseBrowser(), []);
   const router = useRouter();
@@ -86,9 +86,11 @@ export function EmiActions() {
             ? <><Loader2 className="w-4 h-4 animate-spin" /> Exporting…</>
             : <><Download className="w-4 h-4" /> Export</>}
         </Button>
-        <Button variant="primary" onClick={() => setPickerOpen(true)}>
-          <Plus className="w-4 h-4" /> Add EMI
-        </Button>
+        {canEdit && (
+          <Button variant="primary" onClick={() => setPickerOpen(true)}>
+            <Plus className="w-4 h-4" /> Add EMI
+          </Button>
+        )}
       </div>
  
       {/* Step 1: pick a student */}

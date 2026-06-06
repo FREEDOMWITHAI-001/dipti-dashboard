@@ -7,6 +7,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { StudentAvatar } from '@/components/ui/avatar';
 import { fmtINR, fmtDate } from '@/lib/utils';
+import { paymentCta, PAYMENT_TYPES } from '@/lib/payment-types';
 import type { Database } from '@/types/database';
 
 type Student = Database['public']['Tables']['students']['Row'];
@@ -20,6 +21,10 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
   const [student, setStudent] = useState<Student | null>(null);
   const [emi, setEmi] = useState<Emi | null>(null);
   const [sending, setSending] = useState(false);
+  // Payment type used for this send — defaults to the student's saved type but
+  // can be overridden here. Drives both the preview wording and which GHL
+  // workflow/template the reminder is routed to.
+  const [payType, setPayType] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -34,6 +39,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
       if (!cancel) {
         setStudent(s);
         setEmi(emiQ.data ?? null);
+        setPayType((s as any)?.payment_type ?? '');
       }
     })();
     return () => { cancel = true; };
@@ -50,8 +56,11 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
   const linkSource: 'cashfree' | 'emi-set' | 'student-default' | 'none' =
     emiCashfreeLink ? 'cashfree' : (emiGenericLink ? 'emi-set' : (studentLink ? 'student-default' : 'none'));
 
+  // Reminder wording adapts to the selected payment method (UPI, NEFT, Card, …)
+  // so the preview matches the template the chosen GHL workflow will send.
+  const cta = paymentCta(payType);
   const message = student && emi
-    ? `Hi ${student.first_name ?? 'there'}, your EMI of ${fmtINR(Number(emi.amount))} (${emi.installment_no}/${emi.installments_total}) is due on ${fmtDate(emi.due_date)}.${hasPaymentLink ? `\n\nPay here: ${paymentLink}` : ''}\n— Team DVA`
+    ? `Hi ${student.first_name ?? 'there'}, your EMI of ${fmtINR(Number(emi.amount))} (${emi.installment_no}/${emi.installments_total}) is due on ${fmtDate(emi.due_date)}.${hasPaymentLink ? `\n\n${cta}: ${paymentLink}` : ''}\n— Team DVA`
     : '';
 
   async function send() {
@@ -65,6 +74,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
           studentId: student.id,
           emiId: emi?.id ?? null,
           channel: 'whatsapp',
+          paymentType: payType || null,
           payload: {
             first_name: student.first_name,
             last_name: student.last_name,
@@ -74,6 +84,7 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
             payment_link: paymentLink,
             due_date: emi?.due_date,
             installment: emi ? `${emi.installment_no}/${emi.installments_total}` : null,
+            payment_type: payType || null,
           },
         }),
       });
@@ -158,6 +169,21 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
                 </div>
               </div>
             )}
+          </Section>
+
+          <Section label="Payment type">
+            <select
+              value={payType}
+              onChange={(e) => setPayType(e.target.value)}
+              className="w-full h-9 px-3 rounded-lg border border-ink-200 focus:border-accent-500 focus:ring-2 focus:ring-accent-100 outline-none text-[13px] bg-white"
+            >
+              <option value="">Not set (default template & workflow)</option>
+              {PAYMENT_TYPES.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <div className="text-[11px] text-ink-400 mt-1.5">
+              Sets the message wording below and routes to the GHL workflow connected to this type
+              {payType ? '.' : ' (defaults to the student’s saved type).'}
+            </div>
           </Section>
 
           <Section label="Preview">

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { fmtINR } from '@/lib/utils';
+import { PAYMENT_TYPES } from '@/lib/payment-types';
 
 // Reusable EMI setup form.
 // Used by:
@@ -21,17 +22,21 @@ export type EmiSetupValue = {
   first_due_date: string;
   reminder_days_before: number;
   payment_link: string;
+  payment_type: string;
 };
 
 const defaults: EmiSetupValue = {
   total_fee: 0,
   down_payment: 0,
   down_payment_date: new Date().toISOString().slice(0, 10),
-  num_installments: 9,
+  num_installments: 0,
   monthly_amount: 0,
   first_due_date: '',
+  // Reminders always fire 2 days before the due date — no longer user-editable,
+  // kept here so EMI rows still store reminder_date = due - 2.
   reminder_days_before: 2,
   payment_link: '',
+  payment_type: '',
 };
 
 export function EmiSetupForm({
@@ -87,10 +92,10 @@ export function EmiSetupForm({
             className={fieldCls} />
         </Field>
         <Field label="Number of installments">
-          <input type="number" min={1} max={36}
+          <input type="number" min={0} max={36}
             value={value.num_installments}
-            onChange={(e) => set('num_installments', Math.max(1, Number(e.target.value) || 1))}
-            className={fieldCls} placeholder="9" />
+            onChange={(e) => set('num_installments', Math.max(0, Number(e.target.value) || 0))}
+            className={fieldCls} placeholder="0" />
         </Field>
       </div>
 
@@ -109,11 +114,17 @@ export function EmiSetupForm({
         </Field>
       </div>
 
-      <Field label="Reminder days before due">
-        <input type="number" min={0} max={14}
-          value={value.reminder_days_before}
-          onChange={(e) => set('reminder_days_before', Math.max(0, Number(e.target.value) || 0))}
-          className={fieldCls} placeholder="2" />
+      <Field label="Payment type (optional)">
+        <select
+          value={value.payment_type}
+          onChange={(e) => set('payment_type', e.target.value)}
+          className={fieldCls}>
+          <option value="">Not set</option>
+          {PAYMENT_TYPES.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <div className="text-[11px] text-ink-500 mt-1">
+          Preferred method — tailors the wording of every EMI reminder to this payment type.
+        </div>
       </Field>
 
       <Field label="Payment link (optional)">
@@ -174,6 +185,7 @@ export async function saveEmiPlan(
     down_payment: value.down_payment || null,
     down_payment_date: value.down_payment_date || null,
     payment_link: value.payment_link?.trim() || null,
+    payment_type: value.payment_type || null,
   } as any).eq('id', studentId);
   if (stuErr) return { ok: false, error: stuErr.message };
 
@@ -188,11 +200,19 @@ export async function saveEmiPlan(
   // 3. Get existing EMIs so we can preserve paid ones
   const { data: existing } = await sb
     .from('emi_schedule')
-    .select('installment_no, amount, due_date, status, paid_date, paid_via, paid_notes, reminder_date')
+    .select('installment_no, amount, due_date, status, paid_date, paid_via, paid_notes, reminder_date, cashfree_link_id, cashfree_link_url, original_amount')
     .eq('student_id', studentId)
     .order('installment_no');
 
-  const paidExisting = ((existing ?? []) as any[]).filter((r) => r.status === 'paid');
+  const allExisting = ((existing ?? []) as any[]);
+  const paidExisting = allExisting.filter((r) => r.status === 'paid');
+  // Index UNPAID existing rows by installment number so an unchanged installment
+  // that already has a generated Cashfree link keeps it when the plan is
+  // re-saved. Without this, the delete-then-reinsert below dropped
+  // cashfree_link_id/url and orphaned a link that's still payable at Cashfree
+  // (its webhook would then hit "no matching EMI" and never auto-mark it paid).
+  const unpaidByNo = new Map<number, any>();
+  for (const r of allExisting) if (r.status !== 'paid') unpaidByNo.set(r.installment_no, r);
 
   // 4. Delete ALL existing EMI rows (we'll re-insert paid + new unpaid)
   const { error: delErr } = await sb.from('emi_schedule').delete().eq('student_id', studentId);
@@ -226,15 +246,31 @@ export async function saveEmiPlan(
     due.setMonth(due.getMonth() + (i - 1));
     const remind = new Date(due);
     remind.setDate(remind.getDate() - value.reminder_days_before);
-    newRows.push({
+    const dueStr = due.toISOString().slice(0, 10);
+    const row: any = {
       student_id: studentId,
       installment_no: i,
       installments_total: value.num_installments,
       amount: value.monthly_amount,
-      due_date: due.toISOString().slice(0, 10),
+      due_date: dueStr,
       reminder_date: remind.toISOString().slice(0, 10),
       status: 'upcoming',
-    });
+    };
+    // Carry over a live Cashfree link only when this installment is regenerated
+    // UNCHANGED (same number, amount, and due date). A genuinely edited
+    // installment regenerates fresh exactly as before — no behaviour change.
+    const prevUnpaid = unpaidByNo.get(i);
+    if (
+      prevUnpaid &&
+      (prevUnpaid.cashfree_link_id || prevUnpaid.cashfree_link_url) &&
+      Number(prevUnpaid.amount) === Number(value.monthly_amount) &&
+      String(prevUnpaid.due_date).slice(0, 10) === dueStr
+    ) {
+      row.cashfree_link_id = prevUnpaid.cashfree_link_id ?? null;
+      row.cashfree_link_url = prevUnpaid.cashfree_link_url ?? null;
+      if (prevUnpaid.original_amount != null) row.original_amount = prevUnpaid.original_amount;
+    }
+    newRows.push(row);
   }
 
   if (newRows.length === 0) return { ok: true };
@@ -263,7 +299,7 @@ export function EmiSetupModal({
     let cancelled = false;
     (async () => {
       const [{ data: stu }, { data: rows }] = await Promise.all([
-        sb.from('students').select('total_fee, down_payment, down_payment_date, payment_link').eq('id', studentId).maybeSingle(),
+        sb.from('students').select('total_fee, down_payment, down_payment_date, payment_link, payment_type').eq('id', studentId).maybeSingle(),
         sb.from('emi_schedule').select('amount, installment_no, due_date').eq('student_id', studentId).order('installment_no'),
       ]);
       if (cancelled) return;
@@ -274,11 +310,12 @@ export function EmiSetupModal({
           total_fee:            Number((stu as any)?.total_fee ?? 0),
           down_payment:         Number((stu as any)?.down_payment ?? 0),
           down_payment_date:    (stu as any)?.down_payment_date ?? new Date().toISOString().slice(0, 10),
-          num_installments:     existingRows.length || 9,
+          num_installments:     existingRows.length || 0,
           monthly_amount:       Number(existingRows[0]?.amount ?? 0),
           first_due_date:       firstDue,
           reminder_days_before: 2,
           payment_link:         (stu as any)?.payment_link ?? '',
+          payment_type:         (stu as any)?.payment_type ?? '',
         });
       }
       setLoading(false);

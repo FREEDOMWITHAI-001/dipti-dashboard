@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
 import { getMyPermissions } from '@/lib/check-permission';
-import { dispatchReminder } from '@/lib/events';
+import { dispatchReminder, resolveWorkflowId } from '@/lib/events';
 import { normalizePhone } from '@/lib/utils';
 
 // POST /api/ghl/trigger-workflow
@@ -26,12 +26,13 @@ export async function POST(req: Request) {
     channel?: 'whatsapp' | 'sms' | 'email';
     payload?: Record<string, unknown>;
     eventId?: string;
+    paymentType?: string | null;
   };
   if (!body.studentId) return new NextResponse('studentId required', { status: 400 });
 
   const { data: student } = await sb
     .from('students')
-    .select('id, ghl_contact_id, first_name, last_name, email, mobile')
+    .select('id, ghl_contact_id, first_name, last_name, email, mobile, payment_type')
     .eq('id', body.studentId)
     .maybeSingle();
   if (!student) return new NextResponse('student not found', { status: 404 });
@@ -40,10 +41,13 @@ export async function POST(req: Request) {
 
   const { data: ev } = await sb
     .from('reminder_events')
-    .select('default_workflow_id')
+    .select('default_workflow_id, workflow_by_payment_type')
     .eq('id', eventId)
     .maybeSingle();
-  const workflowId = ev?.default_workflow_id ?? null;
+  // Route to the workflow/template mapped to the chosen payment type (the send
+  // modal may override the student's saved type), else the event default.
+  const effectiveType = body.paymentType ?? (student as any).payment_type;
+  const workflowId = resolveWorkflowId(ev as any, effectiveType);
 
   // Normalize phone before forwarding to GHL.
   const normalizedPhone = normalizePhone(student.mobile);

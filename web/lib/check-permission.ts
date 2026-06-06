@@ -5,9 +5,11 @@ export type Permission =
   | 'students' | 'emi' | 'progress' | 'follow-ups'
   | 'reminders' | 'calls' | 'comments' | 'reports'
   // Feature permissions (not nav pages): the AI tools (briefing, progress
-  // summary, chat-screenshot extract), the send-message/reminder action, and
-  // the ability to delete students (single or bulk).
-  | 'ai' | 'send-reminders' | 'delete-students';
+  // summary, chat-screenshot extract), the send-message/reminder action, the
+  // ability to delete students (single or bulk), the ability to edit a
+  // student's identity, program, and EMI plan, and the ability to see revenue
+  // totals (the Collected MTD card on the EMI Tracker).
+  | 'ai' | 'send-reminders' | 'delete-students' | 'edit-students' | 'view-revenue';
 
 /**
  * Gets the current user's permissions + admin status.

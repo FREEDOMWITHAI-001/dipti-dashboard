@@ -6,6 +6,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { Button } from '@/components/ui/button';
 import { fmtINR } from '@/lib/utils';
+import { backfillPaymentType } from '@/lib/payment-types';
 
 // Captures payment date + payment mode + optional reference and marks an EMI paid.
 // Reuses the existing emi_schedule columns:
@@ -25,12 +26,13 @@ const MODES = [
 ];
 
 export function MarkPaidModal({
-  open, onClose, onSaved, emiId, amount, installmentLabel,
+  open, onClose, onSaved, emiId, studentId, amount, installmentLabel,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   emiId: string;
+  studentId?: string;
   amount: number;
   installmentLabel: string;
 }) {
@@ -54,11 +56,14 @@ export function MarkPaidModal({
     if (reference.trim()) patch.payment_link = reference.trim();
 
     const { error } = await sb.from('emi_schedule').update(patch).eq('id', emiId);
-    setBusy(false);
     if (error) {
+      setBusy(false);
       toast(error.message, 'error');
       return;
     }
+    // First payment establishes the student's preferred payment type (if unset).
+    if (studentId) await backfillPaymentType(sb, studentId, mode);
+    setBusy(false);
     toast(`Installment ${installmentLabel} marked paid via ${mode}.`, 'success');
     onSaved();
     onClose();

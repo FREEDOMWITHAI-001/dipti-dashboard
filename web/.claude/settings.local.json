@@ -31,7 +31,9 @@
       "PowerShell(Stop-Process *)",
       "Bash(git rev-list *)",
       "Bash(echo \"exit: $?\")",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(node scripts/diag-emi.mjs)",
+      "Bash(node *)"
     ]
   }
 }

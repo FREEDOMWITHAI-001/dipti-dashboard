@@ -31,12 +31,17 @@ const PROVIDERS: Array<{ value: Provider; label: string; model: string; placehol
 ];
 
 export function SettingsForm({
-  status, isAdmin, currentUserId,
+  status, isAdmin, currentUserId, variant = 'all',
 }: {
   status: Status;
   isAdmin: boolean;
   currentUserId: string | null;
+  // 'core' → Settings page (AI + Voice + Cashfree); 'ghl' → GHL Integration page
+  // (GoHighLevel connection). 'all' keeps the full form (back-compat).
+  variant?: 'all' | 'core' | 'ghl';
 }) {
+  const showCore = variant === 'all' || variant === 'core';
+  const showGhl  = variant === 'all' || variant === 'ghl';
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
   const [show, setShow] = useState<Record<string, boolean>>({});
@@ -63,7 +68,8 @@ export function SettingsForm({
     if (!isAdmin) { toast('Admin role required to save settings', 'error'); return; }
     setSaving(true);
     try {
-      const payload: any = { ai_provider: aiProvider };
+      const payload: any = {};
+      if (showCore) payload.ai_provider = aiProvider;
       if (form.ghl_location_id.trim()) payload.ghl_location_id = form.ghl_location_id.trim();
       if (form.ghl_pit_token.trim())   payload.ghl_pit_token   = form.ghl_pit_token.trim();
       if (form.ai_api_key.trim())      payload.ai_api_key      = form.ai_api_key.trim();
@@ -96,6 +102,7 @@ export function SettingsForm({
 
   return (
     <div className="space-y-4">
+      {showCore && (<>
       <Card title="AI assistant" icon={<Sparkles className="w-4 h-4 text-accent-700" />}
         desc="Powers the AI Progress summaries on every student. Pick a provider, then paste that provider's API key."
       >
@@ -181,7 +188,9 @@ export function SettingsForm({
           </details>
         )}
       </Card>
+      </>)}
 
+      {showGhl && (<>
       <Card title="GoHighLevel (optional)"
         desc="Only needed if you use Pull from GHL to bulk-import contacts. Reminders use webhook URLs and don't need this."
       >
@@ -214,7 +223,9 @@ export function SettingsForm({
           Open reminder catalog →
         </a>
       </Card>
+      </>)}
 
+      {showCore && (
       <Card title="Cashfree Payments" icon={<CreditCard className="w-4 h-4 text-blue-600" />}
         desc="Generate payment links automatically for each EMI. Students pay via UPI/cards. Webhook auto-marks EMI as paid.">
         <div className="space-y-3">
@@ -288,6 +299,7 @@ export function SettingsForm({
           </div>
         </div>
       </Card>
+      )}
 
 
       <div className="flex items-center justify-end gap-3 pt-2">

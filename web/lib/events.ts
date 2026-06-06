@@ -10,6 +10,24 @@ function isWebhookUrl(v: string | null | undefined): boolean {
   return !!v && (v.startsWith('http://') || v.startsWith('https://'));
 }
 
+// Pick the GHL workflow/template for a reminder based on the student's payment
+// type. If the event has a workflow mapped for that exact type, use it; else
+// fall back to the event's default workflow. This is what routes UPI students to
+// the UPI flow, NEFT students to the NEFT flow, etc.
+export function resolveWorkflowId(
+  ev: { default_workflow_id: string | null; workflow_by_payment_type?: Record<string, string> | null } | null | undefined,
+  paymentType: string | null | undefined,
+): string | null {
+  if (!ev) return null;
+  const map = ev.workflow_by_payment_type ?? null;
+  const key = (paymentType ?? '').trim();
+  if (map && key) {
+    const v = (map as Record<string, string>)[key];
+    if (v && String(v).trim()) return String(v).trim();
+  }
+  return ev.default_workflow_id ?? null;
+}
+
 export async function dispatchReminder(sb: AnyClient, args: {
   event: string;
   studentId: string;
@@ -95,7 +113,12 @@ export async function fireReminder(_event: string, _row: any) {
   return null;
 }
 
-export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | null): Promise<number> {
+export async function sweepEmiRemindersDue(
+  sb: AnyClient,
+  workflowId: string | null,
+  workflowByPaymentType: Record<string, string> | null = null,
+): Promise<number> {
+  const wfCfg = { default_workflow_id: workflowId, workflow_by_payment_type: workflowByPaymentType };
   // Keep marking EMIs due TODAY as 'due_soon' for the UI badge/filter — unchanged.
   const today = istDateString();
   await sb
@@ -108,10 +131,15 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
   // (2 days before due)"). Pull the installments whose due date is exactly two
   // days out, joining the student for the contact fields the workflow needs.
   // Paginated so a backlog of >1000 rows doesn't silently skip the tail.
-  const remindOn = istDateString(new Date(Date.now() + 2 * 86400000));
+  // Anchor on the IST calendar date (midnight IST) before adding 2 days, so the
+  // target is "today(IST) + 2 days" regardless of the hour the cron runs or is
+  // retried at. The old `now + 48h` instant only landed on the right date
+  // because the job happened to run mid-morning IST; a retry/back-fill at another
+  // hour would select the wrong due_date (skip a day or remind on the wrong one).
+  const remindOn = istDateString(new Date(Date.parse(istDateString() + 'T00:00:00+05:30') + 2 * 86400000));
   const rows = await selectAllRows((f, t) =>
     sb.from('emi_schedule')
-      .select('id, student_id, amount, due_date, installment_no, installments_total, cashfree_link_url, payment_link, students!inner(ghl_contact_id, email, first_name, last_name, mobile, payment_link)')
+      .select('id, student_id, amount, due_date, installment_no, installments_total, cashfree_link_url, payment_link, students!inner(ghl_contact_id, email, first_name, last_name, mobile, payment_link, payment_type)')
       .eq('due_date', remindOn)
       .neq('status', 'paid')
       .neq('status', 'cancelled')
@@ -120,11 +148,16 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
   );
   let fired = 0;
   for (const r of (rows ?? []) as any[]) {
+   try {
     const stu = r.students ?? {};
-    // Idempotent: skip if a reminder for this EMI is already queued/sent.
+    // Idempotent: skip if a reminder for this EMI is already queued/sent. Use
+    // limit(1), NOT maybeSingle — maybeSingle ERRORS when 2+ rows match, and the
+    // old code read only dup.data, so once an EMI had several historical
+    // reminders the guard was bypassed and it re-sent on every sweep. Treat a
+    // query error as "skip" so a transient failure can't trigger a double-send.
     const dup = await sb.from('reminders').select('id')
-      .eq('emi_id', r.id).in('status', ['queued', 'sent', 'delivered']).maybeSingle();
-    if (dup.data) continue;
+      .eq('emi_id', r.id).in('status', ['queued', 'sent', 'delivered']).limit(1);
+    if (dup.error || (dup.data && dup.data.length > 0)) continue;
 
     // Payment link priority: Cashfree link for THIS EMI > EMI generic link > student default.
     const paymentLink = r.cashfree_link_url || r.payment_link || stu.payment_link || null;
@@ -134,7 +167,7 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
       studentId: r.student_id,
       emiId: r.id,
       ghlContactId: stu.ghl_contact_id ?? null,
-      workflowId,
+      workflowId: resolveWorkflowId(wfCfg, stu.payment_type),
       payload: {
         email: stu.email,
         first_name: stu.first_name,
@@ -144,10 +177,12 @@ export async function sweepEmiRemindersDue(sb: AnyClient, workflowId: string | n
         due_date: r.due_date,
         installment: `${r.installment_no}/${r.installments_total}`,
         payment_link: paymentLink,
+        payment_type: stu.payment_type ?? null,
       },
       triggeredBy: null,
     });
     if (out.ok) fired++;
+   } catch { /* one bad row shouldn't abort the rest of the day's sweep */ }
   }
   return fired;
 }
@@ -243,8 +278,10 @@ export async function sweepFollowupsDue(sb: AnyClient, workflowId: string | null
       .eq('event_id', 'student.followup_due')
       .contains('payload', { call_log_id: r.id })
       .in('status', ['queued', 'sent', 'delivered'])
-      .maybeSingle();
-    if (dup.data) continue;
+      .limit(1);
+    // limit(1) + error-as-skip: maybeSingle errored (and bypassed the guard)
+    // once a follow-up had 2+ reminders, causing repeat sends.
+    if (dup.error || (dup.data && dup.data.length > 0)) continue;
 
     const out = await dispatchReminder(sb, {
       event: 'student.followup_due',

@@ -6,6 +6,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { fmtDate, fmtINR, achievementTags, cn } from '@/lib/utils';
 import { VoiceButton } from './voice-button';
 import { EmiSetupModal } from './emi-setup-modal';
+import { PAYMENT_TYPES } from '@/lib/payment-types';
 import { useToast } from '@/components/shell/toast-region';
 import type { Database } from '@/types/database';
 
@@ -20,7 +21,7 @@ const MEMBERSHIP_OPTIONS = [
   'Ex-💎', 'R💎 Deposit', 'on hold 💎 Dep', 'Settled',
 ];
 
-export function ProfileTab({ student, onChange }: { student: Student; onChange?: (patch: Partial<Student>) => void }) {
+export function ProfileTab({ student, onChange, canEdit = false }: { student: Student; onChange?: (patch: Partial<Student>) => void; canEdit?: boolean }) {
   const sb = supabaseBrowser();
   const [emiPaid, setEmiPaid] = useState<number>(0);
   const [emiCount, setEmiCount] = useState<{ paid: number; total: number }>({ paid: 0, total: 0 });
@@ -84,6 +85,7 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
   const [membership, setMembership] = useState(student.membership ?? '');
   const [startDate, setStartDate] = useState((student as any).course_start_date ?? '');
   const [endDate, setEndDate] = useState((student as any).course_end_date ?? '');
+  const [paymentType, setPaymentType] = useState((student as any).payment_type ?? '');
 
   const lastStudentId = useRef<string>(student.id);
   useEffect(() => {
@@ -102,10 +104,11 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
       setMembership(student.membership ?? '');
       setStartDate((student as any).course_start_date ?? '');
       setEndDate((student as any).course_end_date ?? '');
+      setPaymentType((student as any).payment_type ?? '');
       setEditingProgram(false);
       lastStudentId.current = student.id;
     }
-  }, [student.id, student.background, student.dipti_comments, student.first_name, student.last_name, student.email, student.mobile, student.membership, (student as any).course_start_date, (student as any).course_end_date]);
+  }, [student.id, student.background, student.dipti_comments, student.first_name, student.last_name, student.email, student.mobile, student.membership, (student as any).course_start_date, (student as any).course_end_date, (student as any).payment_type]);
 
   async function saveBg() {
     const newValue = bg;
@@ -149,6 +152,7 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
       membership: membership.trim() || null,
       course_start_date: startDate || null,
       course_end_date: endDate || null,
+      payment_type: paymentType || null,
     };
     const { error } = await sb.from('students').update(patch).eq('id', student.id);
     if (error) { toast(error.message, 'error'); return; }
@@ -170,6 +174,7 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
     setMembership(student.membership ?? '');
     setStartDate((student as any).course_start_date ?? '');
     setEndDate((student as any).course_end_date ?? '');
+    setPaymentType((student as any).payment_type ?? '');
     setEditingProgram(false);
   }
 
@@ -220,7 +225,7 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
 
       {/* IDENTITY */}
       <div>
-        <SectionHeader title="Identity" editing={editingIdentity} onEdit={() => setEditingIdentity(true)} onSave={saveIdentity} onCancel={cancelIdentity} />
+        <SectionHeader title="Identity" canEdit={canEdit} editing={editingIdentity} onEdit={() => setEditingIdentity(true)} onSave={saveIdentity} onCancel={cancelIdentity} />
         <div className="bg-white border border-ink-200/70 rounded-xl px-5">
           <EditableField label="First name" editing={editingIdentity} value={firstName} display={student.first_name ?? '—'} onChange={setFirstName} />
           <EditableField label="Last name" editing={editingIdentity} value={lastName} display={student.last_name ?? '—'} onChange={setLastName} />
@@ -235,7 +240,7 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
 
       {/* PROGRAM */}
       <div>
-        <SectionHeader title="Program" editing={editingProgram} onEdit={() => setEditingProgram(true)} onSave={saveProgram} onCancel={cancelProgram} />
+        <SectionHeader title="Program" canEdit={canEdit} editing={editingProgram} onEdit={() => setEditingProgram(true)} onSave={saveProgram} onCancel={cancelProgram} />
         <div className="bg-white border border-ink-200/70 rounded-xl px-5">
           {editingProgram ? (
             <EditableField
@@ -256,6 +261,15 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
           <Field label="Group" value={(student as any).student_group ?? '—'} />
           <EditableField label="Course start date" editing={editingProgram} value={startDate} display={fmtDate((student as any).course_start_date)} type="date" onChange={setStartDate} />
           <EditableField label="Course end date" editing={editingProgram} value={endDate} display={fmtDate((student as any).course_end_date)} type="date" onChange={setEndDate} />
+          <EditableField
+            label="Payment type"
+            editing={editingProgram}
+            value={paymentType}
+            display={(student as any).payment_type ?? '—'}
+            onChange={setPaymentType}
+            isSelect
+            options={['', ...PAYMENT_TYPES]}
+          />
         </div>
       </div>
 
@@ -279,12 +293,14 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
           <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">Payments</h3>
-              <button
-                onClick={() => setEditPayOpen(true)}
-                className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1"
-              >
-                <Pencil className="w-3 h-3" /> Edit
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => setEditPayOpen(true)}
+                  className="h-7 px-2.5 rounded-md text-[11.5px] font-medium border border-ink-200 hover:bg-ink-50 flex items-center gap-1"
+                >
+                  <Pencil className="w-3 h-3" /> Edit
+                </button>
+              )}
             </div>
             <div className="bg-white border border-ink-200/70 rounded-xl px-5">
               <Field label="Status" value={<span className={cn('inline-flex items-center text-[11.5px] font-semibold px-2 py-0.5 rounded-full', statusColor)}>{status === 'Fully Paid' ? '✅ ' : status === 'Partially Paid' ? '⏳ ' : ''}{status}</span>} />
@@ -360,17 +376,18 @@ export function ProfileTab({ student, onChange }: { student: Student; onChange?:
   );
 }
 
-function SectionHeader({ title, editing, onEdit, onSave, onCancel }: {
+function SectionHeader({ title, editing, onEdit, onSave, onCancel, canEdit = true }: {
   title: string;
   editing: boolean;
   onEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
+  canEdit?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between mb-2">
       <h3 className="text-[12px] uppercase tracking-wider text-ink-500 font-semibold">{title}</h3>
-      {editing ? (
+      {!canEdit ? null : editing ? (
         <div className="flex gap-1">
           <button onClick={onSave} className="h-7 px-2.5 rounded-md text-[11.5px] font-medium btn-primary flex items-center gap-1">
             <Check className="w-3 h-3" /> Save

@@ -546,7 +546,10 @@ function parseEmiRow(row: any, rowNum: number): EmiRow | { error: string } {
 }
 
 function parseMasterRow(row: any, rowNum: number): MasterRow | { error: string } {
-  const email = (row['Email'] || row['email'] || '').toString().trim();
+  // Accept "Email Id" too — the file-level pre-filter already does, and the EMI
+  // template + sample CSV use that header. Without it, a Master Sheet keyed on
+  // "Email Id" passed the pre-filter then failed "missing email" on every row.
+  const email = (row['Email Id'] || row['Email'] || row['email'] || '').toString().trim();
   if (!email) return { error: `Row ${rowNum}: missing email` };
 
   const firstName = (row['First Name'] || row['first_name'] || row['Name'] || '').toString().trim();

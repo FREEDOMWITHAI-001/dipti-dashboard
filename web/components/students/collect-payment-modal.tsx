@@ -6,6 +6,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { Button } from '@/components/ui/button';
 import { fmtINR, fmtDate } from '@/lib/utils';
+import { backfillPaymentType } from '@/lib/payment-types';
 
 // Collect a payment toward the outstanding balance with an EDITABLE amount.
 // Two modes:
@@ -162,6 +163,9 @@ export function CollectPaymentModal({
           });
           if (error) throw error;
         }
+
+        // First payment establishes the student's preferred payment type (if unset).
+        await backfillPaymentType(sb, studentId, mode);
 
         setBusy(false);
         const n = fullyPaid.length + (split ? 1 : 0);

@@ -21,7 +21,7 @@ import type { Database } from '@/types/database';
 type Student = Database['public']['Tables']['students']['Row'];
 type Tab = 'profile' | 'progress' | 'calls' | 'payments' | 'ai' | 'achievements';
  
-export function StudentSlideover({ canDelete = false }: { canDelete?: boolean }) {
+export function StudentSlideover({ canDelete = false, canEdit = false }: { canDelete?: boolean; canEdit?: boolean }) {
   const params = useSearchParams();
   const id = params.get('student');
   const [open, setOpen] = useState(false);
@@ -177,10 +177,10 @@ export function StudentSlideover({ canDelete = false }: { canDelete?: boolean })
  
               <div className="flex-1 overflow-auto">
                 <div className="px-7 py-6">
-                  {tab === 'profile' && <ProfileTab student={student} onChange={patchStudent} />}
+                  {tab === 'profile' && <ProfileTab student={student} onChange={patchStudent} canEdit={canEdit} />}
                   {tab === 'progress' && <ProgressTab student={student} onChange={patchStudent} />}
                   {tab === 'calls' && <CallsTab studentId={student.id} />}
-                  {tab === 'payments' && <PaymentsTab studentId={student.id} />}
+                  {tab === 'payments' && <PaymentsTab studentId={student.id} canEdit={canEdit} />}
                   {tab === 'ai' && <ProgressAiTab studentId={student.id} />}
                   {tab === 'achievements' && <AchievementsSection student={student} onChange={patchStudent} />}
                 </div>
