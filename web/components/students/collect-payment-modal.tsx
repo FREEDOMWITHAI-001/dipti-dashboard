@@ -5,7 +5,7 @@ import { X, IndianRupee, Loader2, Link as LinkIcon, CheckCircle2, Copy, External
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { Button } from '@/components/ui/button';
-import { fmtINR } from '@/lib/utils';
+import { fmtINR, fmtDate } from '@/lib/utils';
 
 // Collect a payment toward the outstanding balance with an EDITABLE amount.
 // Two modes:
@@ -15,9 +15,11 @@ import { fmtINR } from '@/lib/utils';
 //       (paid portion + a new upcoming row for the leftover); anything beyond
 //       the last unpaid installment is recorded as a standalone "extra" paid
 //       row. Already-paid installments are never touched.
-//   • "Payment link" → a FUTURE payment, so it does NOT touch existing EMIs.
-//       It inserts one new upcoming row + a Cashfree link; the link is shown
-//       here to copy/send and the webhook (or Sync) marks it paid on payment.
+//   • "Payment link" → a FUTURE payment. The link is attached to the CURRENT
+//       unpaid installment (oldest due first) so paying it settles THAT EMI —
+//       it does NOT add a duplicate row. A new upcoming row is created only when
+//       there are no unpaid installments left (a genuinely extra collection).
+//       The link is shown here to copy/send; the webhook (or Sync) marks it paid.
 
 const MODES = ['UPI', 'Bank Transfer', 'NEFT', 'Cash', 'Card', 'Cheque', 'Wallet', 'Other'];
 
@@ -181,30 +183,53 @@ export function CollectPaymentModal({
       return;
     }
 
-    // ── Payment link: a future payment → one new upcoming installment + link ──
-    const row: any = {
-      student_id: studentId,
-      installment_no: nextInstallmentNo,
-      installments_total: nextInstallmentNo,
-      amount,
-      status: 'upcoming',
-      due_date: dueDate,
-      reminder_date: reminderFor(dueDate),
-    };
+    // ── Payment link ──
+    // Attach the link to the CURRENT unpaid installment (oldest due first) so
+    // paying it settles that EMI — no duplicate row. Only when there are no
+    // unpaid installments left do we create a new upcoming row (extra collection).
+    const target = unpaidEmis[0] ?? null;
+    let emiIdToLink: string;
 
-    const { data: created, error } = await sb.from('emi_schedule').insert(row).select('id').single();
-    if (error) {
-      setBusy(false);
-      toast(error.message, 'error');
-      return;
+    if (target) {
+      // If the coach changed the amount away from this installment's amount,
+      // update it and remember the plan amount so the redistribution trigger
+      // rebalances the remaining EMIs on payment (same contract as "Get link").
+      if (Math.round(amount) !== Math.round(target.amount)) {
+        const { data: cur } = await sb
+          .from('emi_schedule')
+          .select('amount, original_amount')
+          .eq('id', target.id)
+          .maybeSingle();
+        const planAmount = (cur as any)?.original_amount ?? (cur as any)?.amount ?? target.amount;
+        const { error: upErr } = await sb
+          .from('emi_schedule')
+          .update({ amount, original_amount: planAmount } as any)
+          .eq('id', target.id);
+        if (upErr) { setBusy(false); toast(upErr.message, 'error'); return; }
+      }
+      emiIdToLink = target.id;
+    } else {
+      // No unpaid installments — this is a genuinely extra/unscheduled amount.
+      const row: any = {
+        student_id: studentId,
+        installment_no: nextInstallmentNo,
+        installments_total: nextInstallmentNo,
+        amount,
+        status: 'upcoming',
+        due_date: dueDate,
+        reminder_date: reminderFor(dueDate),
+      };
+      const { data: created, error } = await sb.from('emi_schedule').insert(row).select('id').single();
+      if (error) { setBusy(false); toast(error.message, 'error'); return; }
+      emiIdToLink = (created as any).id;
     }
 
-    // Generate the Cashfree link, then show it here so the coach can copy/send.
+    // Generate the Cashfree link for the chosen installment, then show it.
     try {
       const res = await fetch('/api/cashfree/generate-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emiId: (created as any).id }),
+        body: JSON.stringify({ emiId: emiIdToLink }),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? 'Failed to generate link');
@@ -213,10 +238,10 @@ export function CollectPaymentModal({
       setCreatedLink(data.link_url ?? '');
       toast(`Payment link for ${fmtINR(amount)} created.`, 'success');
     } catch (e: any) {
-      // The installment was created; only the link failed. Keep the row (the
-      // coach can retry "Get link" on it) and surface the error.
+      // The link failed (amount change, if any, persisted). Surface it; the coach
+      // can retry "Get link" on the installment.
       setBusy(false);
-      toast(`Installment added, but link failed: ${e.message}`, 'error');
+      toast(`Link failed: ${e.message}`, 'error');
       onSaved();
       onClose();
     }
@@ -346,6 +371,18 @@ export function CollectPaymentModal({
                     );
                   })()}
                 </>
+              ) : unpaidEmis[0] ? (
+                // Link collects the current unpaid installment — show which one,
+                // not a due-date field (the installment already has its date).
+                <div className="rounded-lg border border-accent-200 bg-accent-50/60 px-3 py-2.5 text-[12px] text-accent-800">
+                  This link collects <span className="font-semibold">EMI {unpaidEmis[0].label}</span> (due {fmtDate(unpaidEmis[0].due_date)}).
+                  When the student pays, that installment is marked paid — no extra installment is added.
+                  {Math.round(amount) !== Math.round(unpaidEmis[0].amount) && (
+                    <div className="mt-1 text-accent-700">
+                      Amount differs from the planned {fmtINR(unpaidEmis[0].amount)} — the remaining installments rebalance once this is paid.
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Field label="Due date">
                   <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={fieldCls} />
