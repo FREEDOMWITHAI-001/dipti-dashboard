@@ -84,7 +84,9 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
             payment_link: paymentLink,
             due_date: emi?.due_date,
             installment: emi ? `${emi.installment_no}/${emi.installments_total}` : null,
+            // GHL reads `payment_method`; keep `payment_type` for older maps.
             payment_type: payType || null,
+            payment_method: payType || null,
           },
         }),
       });

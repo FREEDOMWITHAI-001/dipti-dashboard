@@ -173,11 +173,15 @@ export async function sweepEmiRemindersDue(
         first_name: stu.first_name,
         last_name: stu.last_name,
         phone: normalizePhone(stu.mobile),
+        // GHL's inbound-webhook contact action reads `emi_amount` and
+        // `payment_method`; keep `amount`/`payment_type` too for any older map.
         amount: r.amount,
+        emi_amount: r.amount,
         due_date: r.due_date,
         installment: `${r.installment_no}/${r.installments_total}`,
         payment_link: paymentLink,
         payment_type: stu.payment_type ?? null,
+        payment_method: stu.payment_type ?? null,
       },
       triggeredBy: null,
     });
