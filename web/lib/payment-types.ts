@@ -5,7 +5,7 @@
 export const PAYMENT_TYPES = [
   'UPI',
   'NEFT',
-  'Bank Transfer',
+  'Card',
 ] as const;
 
 export type PaymentType = (typeof PAYMENT_TYPES)[number];
@@ -15,16 +15,16 @@ export type PaymentType = (typeof PAYMENT_TYPES)[number];
 // unrecognised. This is what makes the reminder "payment-type specific".
 export function paymentCta(type: string | null | undefined): string {
   switch ((type ?? '').trim().toLowerCase()) {
-    case 'upi':           return 'Pay via UPI here';
-    case 'neft':          return 'Pay via NEFT here';
-    case 'bank transfer': return 'Pay via bank transfer here';
-    default:              return 'Pay here';
+    case 'upi':  return 'Pay via UPI here';
+    case 'neft': return 'Pay via NEFT here';
+    case 'card': return 'Pay by card here';
+    default:     return 'Pay here';
   }
 }
 
-// Canonicalise a raw method string — a manually-picked mode ("Bank Transfer")
-// or a Cashfree payment_group ("net_banking") — to one of PAYMENT_TYPES.
-// Only UPI / NEFT / Bank Transfer are recognised; everything else (card, wallet,
+// Canonicalise a raw method string — a manually-picked mode ("Card") or a
+// Cashfree payment_group ("credit_card", "debit_card") — to one of PAYMENT_TYPES.
+// Only UPI / NEFT / Card are recognised; everything else (bank transfer, wallet,
 // cash, the generic "Cashfree" label, etc.) returns null so a recorded payment
 // can never set a payment_type that isn't a valid option.
 export function normalizePaymentMethod(raw: string | null | undefined): string | null {
@@ -32,7 +32,7 @@ export function normalizePaymentMethod(raw: string | null | undefined): string |
   if (!s) return null;
   if (s.includes('upi')) return 'UPI';
   if (s.includes('neft')) return 'NEFT';
-  if (s.includes('bank')) return 'Bank Transfer'; // bank transfer / net_banking
+  if (s.includes('card')) return 'Card'; // credit_card / debit_card
   return null;
 }
 
