@@ -4,19 +4,8 @@
 // this one list. To add a method: add it here AND a case in paymentCta() below.
 export const PAYMENT_TYPES = [
   'UPI',
-  'Card',
-  'Net Banking',
   'NEFT',
-  'RTGS',
-  'IMPS',
   'Bank Transfer',
-  'Wallet',
-  'QR Code',
-  'Auto-debit / Mandate',
-  'Cash',
-  'Cheque',
-  'Demand Draft',
-  'Other',
 ] as const;
 
 export type PaymentType = (typeof PAYMENT_TYPES)[number];
@@ -26,43 +15,25 @@ export type PaymentType = (typeof PAYMENT_TYPES)[number];
 // unrecognised. This is what makes the reminder "payment-type specific".
 export function paymentCta(type: string | null | undefined): string {
   switch ((type ?? '').trim().toLowerCase()) {
-    case 'upi':                  return 'Pay via UPI here';
-    case 'card':                 return 'Pay by card here';
-    case 'net banking':          return 'Pay via net banking here';
-    case 'neft':                 return 'Pay via NEFT here';
-    case 'rtgs':                 return 'Pay via RTGS here';
-    case 'imps':                 return 'Pay via IMPS here';
-    case 'bank transfer':        return 'Pay via bank transfer here';
-    case 'wallet':               return 'Pay via wallet here';
-    case 'qr code':              return 'Scan the QR / pay here';
-    case 'auto-debit / mandate': return 'Your EMI will be auto-debited — details here';
-    case 'cash':                 return 'For your cash payment, details here';
-    case 'cheque':               return 'For your cheque payment, details here';
-    case 'demand draft':         return 'For your demand draft, details here';
-    default:                     return 'Pay here';
+    case 'upi':           return 'Pay via UPI here';
+    case 'neft':          return 'Pay via NEFT here';
+    case 'bank transfer': return 'Pay via bank transfer here';
+    default:              return 'Pay here';
   }
 }
 
 // Canonicalise a raw method string — a manually-picked mode ("Bank Transfer")
-// or a Cashfree payment_group ("credit_card", "net_banking") — to one of
-// PAYMENT_TYPES. Returns null for empty or the generic "Cashfree" gateway label
-// (which names no specific method).
+// or a Cashfree payment_group ("net_banking") — to one of PAYMENT_TYPES.
+// Only UPI / NEFT / Bank Transfer are recognised; everything else (card, wallet,
+// cash, the generic "Cashfree" label, etc.) returns null so a recorded payment
+// can never set a payment_type that isn't a valid option.
 export function normalizePaymentMethod(raw: string | null | undefined): string | null {
   const s = (raw ?? '').trim().toLowerCase();
-  if (!s || s === 'cashfree' || s === 'other') return null;
+  if (!s) return null;
   if (s.includes('upi')) return 'UPI';
-  if (s.includes('net') && s.includes('bank')) return 'Net Banking'; // net_banking / netbanking
-  if (s.includes('card')) return 'Card';                             // credit_card / debit_card
-  if (s.includes('wallet') || s === 'app') return 'Wallet';
-  if (s.includes('imps')) return 'IMPS';
-  if (s.includes('rtgs')) return 'RTGS';
   if (s.includes('neft')) return 'NEFT';
-  if (s.includes('bank')) return 'Bank Transfer';
-  if (s.includes('cash')) return 'Cash';
-  if (s.includes('cheque') || s.includes('check')) return 'Cheque';
-  if (s.includes('demand') || s === 'dd') return 'Demand Draft';
-  if (s.includes('qr')) return 'QR Code';
-  return (raw ?? '').trim() || null; // keep an unmapped-but-meaningful value as-is
+  if (s.includes('bank')) return 'Bank Transfer'; // bank transfer / net_banking
+  return null;
 }
 
 // Record a student's preferred payment_type from the method used on a payment,
