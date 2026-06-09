@@ -5,7 +5,7 @@ import { ExternalLink, Link2, Pencil, Check, X, ChevronDown, ChevronUp } from 'l
 import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { cn } from '@/lib/utils';
-import { PAYMENT_TYPES, paymentCta } from '@/lib/payment-types';
+import { PAYMENT_TYPES, reminderTemplate } from '@/lib/payment-types';
 import type { Database } from '@/types/database';
 
 type Event = Database['public']['Tables']['reminder_events']['Row'];
@@ -214,8 +214,13 @@ function PerTypePanel({ event, onSaved }: { event: Event; onSaved: (id: string, 
     toast(v ? `Workflow connected for ${selected}` : `Workflow cleared for ${selected}`, 'success');
   }
 
-  // The reminder line this type will send (mirrors the student-facing preview).
-  const templateLine = `${paymentCta(selected)}: <payment link>`;
+  // The exact message this type will send (mirrors the student-facing preview).
+  const templatePreview = reminderTemplate(selected, {
+    name: '<name>',
+    amount: '₹<amount>',
+    dueDate: '<date>',
+    paymentLink: '<payment link>',
+  });
 
   return (
     <div className="px-5 py-4 bg-ink-50/40 border-b border-ink-100 space-y-3">
@@ -245,7 +250,7 @@ function PerTypePanel({ event, onSaved }: { event: Event; onSaved: (id: string, 
           <div>
             <div className="text-[11px] font-medium text-ink-600 mb-1">Template this type sends</div>
             <div className="bg-emerald-50/40 border border-emerald-100 rounded-lg px-3 py-2 text-[12px] text-ink-700 whitespace-pre-line">
-              {`Hi <name>, your EMI of <amount> (<n/total>) is due on <date>.\n\n${templateLine}\n— Team DVA`}
+              {templatePreview}
             </div>
           </div>
           <label className="block">

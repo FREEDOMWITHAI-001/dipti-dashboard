@@ -22,6 +22,30 @@ export function paymentCta(type: string | null | undefined): string {
   }
 }
 
+// The full WhatsApp message a reminder sends, per payment type. This MUST mirror
+// the three GHL templates word-for-word so the in-app preview matches what the
+// student actually receives:
+//   UPI  → {{1}} name, {{2}} amount, {{3}} due date
+//   NEFT → {{1}} name, {{2}} amount, {{3}} due date
+//   Card → {{1}} name, {{2}} amount, {{3}} due date, {{4}} payment link
+// `amount` is passed already formatted with the ₹ symbol (e.g. "₹1,234").
+// A type that isn't set / unrecognised falls back to the UPI wording (the
+// generic "pay to the number or QR" message), matching the default GHL workflow.
+export function reminderTemplate(
+  type: string | null | undefined,
+  v: { name: string; amount: string; dueDate: string; paymentLink: string },
+): string {
+  switch ((type ?? '').trim().toLowerCase()) {
+    case 'neft':
+      return `Hi ${v.name}, Your EMI of ${v.amount} is due on ${v.dueDate}. You can do the NEFT to the same account.\nTeam DVA`;
+    case 'card':
+      return `Hi ${v.name}, Your EMI of ${v.amount} is due on ${v.dueDate}. Payment link: ${v.paymentLink}\nTeam DVA`;
+    case 'upi':
+    default:
+      return `Hi ${v.name}, Your EMI of ${v.amount} is due on ${v.dueDate}. You can pay on 7400182818 or the above QR Code\nTeam DVA`;
+  }
+}
+
 // Canonicalise a raw method string — a manually-picked mode ("Card") or a
 // Cashfree payment_group ("credit_card", "debit_card") — to one of PAYMENT_TYPES.
 // Only UPI / NEFT / Card are recognised; everything else (bank transfer, wallet,

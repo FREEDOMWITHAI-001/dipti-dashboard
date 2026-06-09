@@ -7,7 +7,7 @@ import { supabaseBrowser } from '@/lib/supabase/client';
 import { useToast } from '@/components/shell/toast-region';
 import { StudentAvatar } from '@/components/ui/avatar';
 import { fmtINR, fmtDate } from '@/lib/utils';
-import { paymentCta, PAYMENT_TYPES } from '@/lib/payment-types';
+import { reminderTemplate, PAYMENT_TYPES } from '@/lib/payment-types';
 import type { Database } from '@/types/database';
 
 type Student = Database['public']['Tables']['students']['Row'];
@@ -57,10 +57,14 @@ export function ReminderModal({ open, onClose, studentId, emiId }: {
     emiCashfreeLink ? 'cashfree' : (emiGenericLink ? 'emi-set' : (studentLink ? 'student-default' : 'none'));
 
   // Reminder wording adapts to the selected payment method (UPI, NEFT, Card, …)
-  // so the preview matches the template the chosen GHL workflow will send.
-  const cta = paymentCta(payType);
+  // so the preview matches the exact GHL template the chosen workflow will send.
   const message = student && emi
-    ? `Hi ${student.first_name ?? 'there'}, your EMI of ${fmtINR(Number(emi.amount))} (${emi.installment_no}/${emi.installments_total}) is due on ${fmtDate(emi.due_date)}.${hasPaymentLink ? `\n\n${cta}: ${paymentLink}` : ''}\n— Team DVA`
+    ? reminderTemplate(payType, {
+        name: student.first_name ?? 'there',
+        amount: fmtINR(Number(emi.amount)),
+        dueDate: fmtDate(emi.due_date),
+        paymentLink: paymentLink || '<payment link>',
+      })
     : '';
 
   async function send() {
