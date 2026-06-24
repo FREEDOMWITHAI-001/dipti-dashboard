@@ -12,6 +12,8 @@ type Row = {
   email: string | null;
   mobile: string | null;
   created_at: string;
+  // Most recent call timestamp, or null if the student has never been called.
+  last_call_at?: string | null;
 };
 
 // Local YYYY-MM-DD for an arbitrary date.
@@ -21,11 +23,13 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-// The 30-day follow-up date = the day a student joined + 30 days.
-function followUpDate(created_at: string): Date {
-  const d = new Date(created_at);
-  d.setDate(d.getDate() + 30);
-  return d;
+// The 30-day follow-up date = 30 days after the student's last contact, so it
+// recurs after every call. Before the first call there is no contact yet, so
+// it falls back to the join date (created_at) — the original behaviour.
+function followUpDate(created_at: string, last_call_at?: string | null): Date {
+  const base = new Date(last_call_at ?? created_at);
+  base.setDate(base.getDate() + 30);
+  return base;
 }
 
 function shortDate(d: Date): string {
@@ -39,7 +43,7 @@ export function FollowUp30List({ rows }: { rows: Row[] }) {
   const [to, setTo] = useState(today);
 
   const enriched = useMemo(
-    () => rows.map((r) => ({ ...r, due: followUpDate(r.created_at) })),
+    () => rows.map((r) => ({ ...r, due: followUpDate(r.created_at, r.last_call_at) })),
     [rows]
   );
 

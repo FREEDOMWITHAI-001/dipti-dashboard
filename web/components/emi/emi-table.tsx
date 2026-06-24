@@ -68,6 +68,15 @@ export function EmiTable({ rows, initialTab = 'due' }: { rows: Row[]; initialTab
     window.history.pushState(null, '', `/emi?${next.toString()}`);
   }
 
+  // Clicking a student opens the slideover (mounted in the app layout) on its
+  // Profile tab — mirrors openStudent in students-table.tsx. Shallow URL update
+  // so the force-dynamic EMI page isn't refetched just to open a panel.
+  function openStudent(id: string) {
+    const p = new URLSearchParams(params.toString());
+    p.set('student', id);
+    window.history.pushState(null, '', `/emi?${p.toString()}`);
+  }
+
   return (
     <div className="bg-white border border-ink-200/70 rounded-xl">
       <div className="px-5 py-2 border-b border-ink-100 flex gap-1 items-center">
@@ -91,13 +100,18 @@ export function EmiTable({ rows, initialTab = 'due' }: { rows: Row[]; initialTab
 
       {filtered.map((r) => (
         <div key={r.id} className="grid grid-cols-[1.4fr_0.6fr_0.8fr_0.8fr_0.7fr_180px] gap-4 px-6 py-3.5 items-center border-b border-ink-100 last:border-0 text-[13px]">
-          <div className="flex items-center gap-2.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => openStudent(r.student_id)}
+            className="flex items-center gap-2.5 min-w-0 text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-ink-50 transition"
+            title="Open profile"
+          >
             <StudentAvatar first={r.students.first_name} last={r.students.last_name} size={30} />
             <div className="min-w-0">
               <div className="font-medium truncate">{r.students.first_name} {r.students.last_name}</div>
               <div className="text-[11.5px] text-ink-500 truncate">{r.students.email}</div>
             </div>
-          </div>
+          </button>
           <div className="font-mono text-[12px] text-ink-700">{r.installment_no}/{r.installments_total}</div>
           <div className="font-medium">{fmtINR(Number(r.amount))}</div>
           <div className="text-ink-700">
